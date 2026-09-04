@@ -105,7 +105,7 @@ const ZONES = [
 ];
 const DELAY_MS = 15 * 60 * 1000;
 
-const APP_VERSION = "1.10.1";
+const APP_VERSION = "1.11.1";
 const VERSION_HISTORY = [
   { version: "1.6.0", changes: [
     "Arreglado un error que dejaba de guardar cambios después de contradecir una solicitud (afectaba solo a esas aulas puntuales).",
@@ -138,20 +138,14 @@ const VERSION_HISTORY = [
     "Se agregó una reparación automática: si la base de datos quedó con algo en mal estado, la app lo corrige sola la próxima vez que se abre.",
     "Número de versión visible abajo de todo en la pantalla de inicio de sesión.",
   ]},
-  { version: "1.9.0", changes: [
-    "Las cátedras ahora se cargan con turno (mañana/tarde/noche) y días de la semana.",
-    "Al pedir apertura/cierre solo aparecen las cátedras del turno y el día de quien está pidiendo — así la lista no se llena de cátedras de otros turnos.",
-    "Si la cátedra que necesitás no aparece (porque es de otro turno/día), se puede cargar de nuevo ahí mismo, para ese turno y ese día.",
-    "Las cátedras que ya tenías cargadas (sin turno ni día) siguen apareciendo siempre, sin filtrar.",
-  ]},
-  { version: "1.10.0", changes: [
-    "Cátedras: ahora se puede elegir 2 o más turnos, y se puede cargar materia (para el caso de una misma cátedra con clases en turnos distintos) y el aula habitual.",
-    "Personal: ahora se puede elegir 2 o más turnos, para quien cubre parte de dos turnos.",
+  { version: "1.11.1", changes: [
+    "Cátedras: se cargan con turno (uno o varios), días de la semana, materia (para separar, por ejemplo, dos materias distintas de la misma persona en turnos diferentes) y aula habitual.",
+    "Al pedir apertura/cierre, el picker de cátedras solo muestra las del turno y el día de quien está pidiendo.",
+    "El aula habitual se busca escribiendo (con sugerencias en vivo) en vez de escribirla a mano — queda conectada de verdad con el aula real.",
     "Arreglado el bug de cátedras con turno pero sin día, que aparecían en todos los turnos.",
+    "Personal: se pueden asignar 2 o más turnos a una misma persona, para quien cubre parte de dos turnos.",
     "Nuevo sector Subsuelo: Aula Magna + aulas 1, 2, 3 y 4.",
-  ]},
-  { version: "1.10.1", changes: [
-    "El número de versión en la pantalla de inicio de sesión ahora se puede tocar para ver el historial completo de novedades.",
+    "El aviso de novedades al entrar ahora solo muestra la última versión. El número de versión en el login se puede tocar para ver el historial completo cuando quieras.",
   ]},
 ];
 // se mantiene por compatibilidad con el resto del código, siempre apunta a la version mas nueva
@@ -610,6 +604,40 @@ function catedraId(c) { return typeof c === "string" ? c : c.id; }
 function catedraName(c) { return typeof c === "string" ? c : c.name; }
 function catedraMateria(c) { return typeof c === "string" ? null : (c.materia || null); }
 function catedraAula(c) { return typeof c === "string" ? null : (c.aula || null); }
+function aulaLabel(id) { return id ? (data.doors[id]?.label || id) : null; }
+// campo de texto con sugerencias en vivo de las aulas/depositos reales, en vez de un select o texto libre
+function aulaAutocompleteHTML(inputId, sugId, initialId) {
+  return `<div style="position:relative;margin-bottom:10px;">
+    <input id="${inputId}" value="${esc(aulaLabel(initialId) || "")}" placeholder="Aula habitual (opcional) — escribí para buscar" autocomplete="off"
+      style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;" />
+    <div id="${sugId}" class="hidden" style="position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #D8CFB8;border-radius:8px;max-height:180px;overflow-y:auto;z-index:5;margin-top:2px;"></div>
+  </div>`;
+}
+// conecta el input+sugerencias. Devuelve un objeto con getId() para leer el aula elegida al guardar.
+function bindAulaAutocomplete(inputId, sugId, initialId) {
+  const inputEl = document.getElementById(inputId), sugEl = document.getElementById(sugId);
+  let selectedId = initialId || null;
+  const renderSuggestions = (query) => {
+    const q = query.trim().toLowerCase();
+    if (!q) { sugEl.innerHTML = ""; sugEl.classList.add("hidden"); return; }
+    const matches = Object.values(data.doors).filter(d => d.label.toLowerCase().includes(q) || d.sectorLabel.toLowerCase().includes(q))
+      .sort((a,b)=>a.label.localeCompare(b.label,"es",{numeric:true})).slice(0, 8);
+    if (!matches.length) { sugEl.innerHTML = `<p style="font-size:12px;color:var(--ink-soft);padding:8px 10px;margin:0;">Sin resultados.</p>`; sugEl.classList.remove("hidden"); return; }
+    sugEl.innerHTML = matches.map(d => `<button type="button" class="aula-suggestion" data-id="${esc(d.id)}" style="display:flex;justify-content:space-between;width:100%;padding:8px 10px;border-bottom:1px solid #E4DECB;text-align:left;background:#fff;">
+        <span style="font-size:13px;">${esc(d.label)}</span><span style="font-size:11px;color:var(--ink-soft);">${esc(d.sectorLabel)}</span>
+      </button>`).join("");
+    sugEl.classList.remove("hidden");
+    sugEl.querySelectorAll(".aula-suggestion").forEach(b => b.onclick = () => {
+      selectedId = b.dataset.id;
+      inputEl.value = aulaLabel(selectedId);
+      sugEl.innerHTML = ""; sugEl.classList.add("hidden");
+    });
+  };
+  inputEl.oninput = () => { selectedId = null; renderSuggestions(inputEl.value); };
+  inputEl.onfocus = () => { if (inputEl.value) renderSuggestions(inputEl.value); };
+  inputEl.onblur = () => { setTimeout(() => sugEl.classList.add("hidden"), 150); }; // delay para que el click en la sugerencia llegue a tiempo
+  return { getId: () => selectedId };
+}
 function catedraLabel(c) { const n = catedraName(c), m = catedraMateria(c); return m ? `${n} - ${m}` : n; }
 function catedraTurnos(c) {
   if (typeof c === "string") return [];
@@ -680,10 +708,7 @@ function confirmIfMismatch(doorsArr, status) {
 function checkVersionPopup() {
   const seen = localStorage.getItem("fadu-seen-version");
   if (seen === APP_VERSION) return;
-  const seenIdx = VERSION_HISTORY.findIndex(v => v.version === seen);
-  // si nunca vio nada, o vio una version que ya no esta en el historial, mostramos solo la ultima
-  const pending = seenIdx === -1 && seen ? [VERSION_HISTORY[VERSION_HISTORY.length - 1]] : VERSION_HISTORY.slice(seenIdx + 1);
-  if (!pending.length) { localStorage.setItem("fadu-seen-version", APP_VERSION); return; }
+  const pending = [VERSION_HISTORY[VERSION_HISTORY.length - 1]]; // solo la ultima; el resto se ve tocando el numero de version
   const root = document.getElementById("detail-root");
   root.innerHTML = `<div class="sheet" id="version-popup-bg"><div class="sheet-inner">
       <h2 class="display" style="font-size:20px;font-weight:700;margin:0 0 4px;">Novedades</h2>
@@ -693,6 +718,7 @@ function checkVersionPopup() {
         <ul style="margin:0 0 4px;padding-left:18px;">
           ${v.changes.map(c => `<li style="font-size:13px;margin-bottom:8px;line-height:1.4;">${esc(c)}</li>`).join("")}
         </ul>`).join("")}
+      <p style="font-size:11px;color:var(--ink-soft);margin:10px 0 0;">¿Te perdiste alguna? Tocá el número de versión en la pantalla de inicio de sesión para ver todo el historial.</p>
       <button id="version-popup-accept" class="btn-primary" style="margin-top:14px;">Aceptar</button>
     </div></div>`;
   document.getElementById("version-popup-accept").onclick = () => {
@@ -977,7 +1003,7 @@ function renderPersonal() {
       <div class="card" style="margin-bottom:14px;">
         <input id="new-catedra-input" placeholder="Ej: González" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px;" />
         <input id="new-catedra-materia" placeholder="Materia (opcional, ej: Cálculo)" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px;" />
-        <input id="new-catedra-aula" placeholder="Aula habitual (opcional, ej: 106)" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:10px;" />
+        ${aulaAutocompleteHTML("new-catedra-aula", "new-catedra-aula-sug", null)}
         <label class="mono" style="font-size:11px;color:var(--ink-soft);">TURNO (podés elegir más de uno)</label>
         <div style="display:flex;gap:6px;margin:6px 0 10px;">
           <button data-newcat-turno="manana" class="chip newcat-turno" style="flex:1;font-size:12px;">☀️ Mañana</button>
@@ -994,7 +1020,7 @@ function renderPersonal() {
         const turnos = catedraTurnos(c), dias = catedraDias(c), aula = catedraAula(c);
         const turnoIcons = turnos.map(t=>({manana:"☀️",tarde:"🌤️",noche:"🌙"}[t])).join("");
         const diasTxt = dias.length ? dias.map(d=>["D","L","M","X","J","V","S"][d]).join("") : "";
-        return `<button class="chip" data-edit-catedra="${esc(catedraId(c))}">✎ ${esc(catedraLabel(c))}${aula?` (aula ${esc(aula)})`:""}${turnoIcons?` ${turnoIcons}`:""}${diasTxt?` ${diasTxt}`:""}</button>`;
+        return `<button class="chip" data-edit-catedra="${esc(catedraId(c))}">✎ ${esc(catedraLabel(c))}${aula?` (aula ${esc(aulaLabel(aula))})`:""}${turnoIcons?` ${turnoIcons}`:""}${diasTxt?` ${diasTxt}`:""}</button>`;
       }).join("")}</div>`}
     </div>`;
 }
@@ -1032,7 +1058,8 @@ function bindTabHandlers(root) {
     root.querySelectorAll("[data-edit-staff]").forEach(b => b.onclick = () => openStaffSheet(b.dataset.editStaff));
     root.querySelectorAll("[data-edit-catedra]").forEach(b => b.onclick = () => openCatedraSheet(b.dataset.editCatedra));
     const ci = document.getElementById("new-catedra-input"), cb = document.getElementById("new-catedra-btn");
-    const cMateria = document.getElementById("new-catedra-materia"), cAula = document.getElementById("new-catedra-aula");
+    const cMateria = document.getElementById("new-catedra-materia");
+    const aulaAc = document.getElementById("new-catedra-aula") ? bindAulaAutocomplete("new-catedra-aula", "new-catedra-aula-sug", null) : null;
     if (cb) {
       let newCatTurnos = [], newCatDias = [];
       const check = () => cb.disabled = !ci.value.trim();
@@ -1045,8 +1072,8 @@ function bindTabHandlers(root) {
       });
       cb.onclick = () => {
         if (!ci.value.trim()) return;
-        addCatedra({ name: ci.value.trim(), materia: cMateria.value.trim() || null, aula: cAula.value.trim() || null, turnos: newCatTurnos, dias: newCatDias });
-        ci.value = ""; cMateria.value = ""; cAula.value = ""; newCatTurnos = []; newCatDias = [];
+        addCatedra({ name: ci.value.trim(), materia: cMateria.value.trim() || null, aula: aulaAc ? aulaAc.getId() : null, turnos: newCatTurnos, dias: newCatDias });
+        ci.value = ""; cMateria.value = ""; document.getElementById("new-catedra-aula").value = ""; newCatTurnos = []; newCatDias = [];
         root.querySelectorAll(".newcat-turno, .newcat-day").forEach(x=>x.classList.remove("active"));
         check();
       };
@@ -1250,7 +1277,7 @@ function openCatedraSheet(id) {
       <label class="mono" style="font-size:11px;color:var(--ink-soft);">MATERIA (opcional)</label>
       <input id="cat-materia" value="${esc(catedraMateria(existing) || "")}" placeholder="Ej: Cálculo" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:11px 12px;font-size:14px;margin:6px 0 10px;" />
       <label class="mono" style="font-size:11px;color:var(--ink-soft);">AULA HABITUAL (opcional)</label>
-      <input id="cat-aula" value="${esc(catedraAula(existing) || "")}" placeholder="Ej: 106" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:11px 12px;font-size:14px;margin:6px 0 6px;" />
+      ${aulaAutocompleteHTML("cat-aula", "cat-aula-sug", catedraAula(existing))}
       <p id="cat-error" class="hidden" style="font-size:11px;color:var(--red);margin-bottom:10px;">Ya existe una cátedra con ese nombre y esa materia.</p>
       <p style="font-size:11px;color:var(--ink-soft);margin-bottom:16px;">Los pedidos y el historial ya cargados con este nombre se actualizan solos si lo cambiás.</p>
       <label class="mono" style="font-size:11px;color:var(--ink-soft);">TURNO (podés elegir más de uno)</label>
@@ -1269,6 +1296,7 @@ function openCatedraSheet(id) {
     </div></div>`;
   const close = () => { root.innerHTML = ""; };
   document.getElementById("cat-close").onclick = close;
+  const aulaAc = bindAulaAutocomplete("cat-aula", "cat-aula-sug", catedraAula(existing));
   document.getElementById("cat-sheet-bg").onclick = (e) => { if (e.target.id==="cat-sheet-bg") close(); };
   root.querySelectorAll(".cat-turno").forEach(b => b.onclick = () => { const t = b.dataset.catTurno; turnos = turnos.includes(t) ? turnos.filter(x=>x!==t) : [...turnos, t]; b.classList.toggle("active", turnos.includes(t)); });
   root.querySelectorAll(".cat-day").forEach(b => b.onclick = () => {
@@ -1279,7 +1307,7 @@ function openCatedraSheet(id) {
   document.getElementById("cat-save").onclick = () => {
     const val = document.getElementById("cat-name").value.trim();
     const materia = document.getElementById("cat-materia").value.trim() || null;
-    const aula = document.getElementById("cat-aula").value.trim() || null;
+    const aula = aulaAc.getId();
     if (!val) return;
     const newLabel = materia ? `${val} - ${materia}` : val;
     const oldLabel = catedraLabel(existing);
@@ -1320,7 +1348,7 @@ function renderDoorDetail() {
     ${user.role==="jefe" ? `
       <p class="mono" style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">PEDIR AL PERSONAL DEL PISO</p>
       <p style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">Cátedra (opcional)</p>
-      ${catedras.length ? `<div id="det-catedras" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">${catedras.map(c=>`<button class="chip det-cat" data-cat="${esc(catedraLabel(c))}">${esc(catedraLabel(c))}${catedraAula(c)?` (aula ${esc(catedraAula(c))})`:""}</button>`).join("")}</div>` : ""}
+      ${catedras.length ? `<div id="det-catedras" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">${catedras.map(c=>`<button class="chip det-cat" data-cat="${esc(catedraLabel(c))}">${esc(catedraLabel(c))}${catedraAula(c)?` (aula ${esc(aulaLabel(catedraAula(c)))})`:""}</button>`).join("")}</div>` : ""}
       ${totalCatedras > catedras.length ? `<p style="font-size:10px;color:var(--ink-soft);margin:0 0 6px;">Hay ${totalCatedras - catedras.length} cátedra(s) más cargadas para otro turno/día — si es una de esas, escribila de nuevo abajo.</p>` : ""}
       <div style="display:flex;gap:6px;margin-bottom:4px;">
         <input id="new-cat-inline" placeholder="¿No está en la lista? Escribila acá" style="flex:1;border:1px solid #D8CFB8;border-radius:6px;padding:7px 10px;font-size:12px;" />

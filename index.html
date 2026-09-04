@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Control Seguridad FADU</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#22303C" />
+<link rel="icon" href="icons/icon-192.png" />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EDE8DD; --ink:#22303C; --ink-soft:#5B6B73; --brass:#B08D3D; --brass-soft:#E4D6AE;
+    --green:#3F8F5F; --green-soft:#DCEEE1; --red:#B5432E; --red-soft:#F3DCD5;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'IBM Plex Sans',sans-serif;background:var(--paper);color:var(--ink);}
+  .display{font-family:'Fraunces',serif;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  #app{max-width:480px;margin:0 auto;min-height:100vh;}
+  button{font-family:inherit;border:none;cursor:pointer;background:none;}
+  input{font-family:inherit;}
+  .header{background:var(--ink);color:#F7F4EC;padding:20px 16px 12px;border-radius:0 0 14px 14px;display:flex;justify-content:space-between;align-items:center;}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+  .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
+  .plate{position:relative;background:#F7F4EC;border:1px solid #D8CFB8;border-radius:8px;aspect-ratio:1/0.85;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 4px;user-select:none;-webkit-touch-callout:none;touch-action:manipulation;}
+  .dot{width:10px;height:10px;border-radius:999px;margin-bottom:4px;}
+  @keyframes pulseG{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(63,143,95,.5)}50%{opacity:.45;box-shadow:0 0 0 7px rgba(63,143,95,0)}}
+  @keyframes pulseR{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(181,67,46,.5)}50%{opacity:.45;box-shadow:0 0 0 7px rgba(181,67,46,0)}}
+  .pg{animation:pulseG 1.3s ease-in-out infinite;} .pr{animation:pulseR 1.3s ease-in-out infinite;}
+  .pgf{animation:pulseG .7s ease-in-out infinite;} .prf{animation:pulseR .7s ease-in-out infinite;}
+  .tabs{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;}
+  .tabs-inner{max-width:480px;width:100%;background:#fff;border-top:1px solid #D8CFB8;display:flex;justify-content:space-around;padding:8px 4px;}
+  .tab-btn{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;color:var(--ink-soft);position:relative;padding:2px 8px;}
+  .tab-btn.active{color:var(--ink);font-weight:600;}
+  .sheet{position:fixed;inset:0;background:rgba(34,48,60,.45);display:flex;align-items:flex-end;justify-content:center;z-index:50;}
+  .sheet-inner{max-width:480px;width:100%;max-height:88vh;overflow-y:auto;background:var(--paper);border-radius:16px 16px 0 0;padding:20px;}
+  .btn-primary{background:var(--ink);color:#F7F4EC;padding:13px;border-radius:8px;font-weight:600;font-size:15px;width:100%;}
+  .btn-primary:disabled{background:#C7BFA9;}
+  .card{background:#fff;border:1px solid #D8CFB8;border-radius:10px;padding:12px;}
+  .chip{padding:8px 12px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid #D8CFB8;background:#fff;white-space:nowrap;}
+  .chip.active{background:var(--ink);color:#F7F4EC;}
+  .hidden{display:none !important;}
+  .pin-input{letter-spacing:10px;text-align:center;font-size:22px;width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:12px;}
+  .row-btn{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #E4DECB;width:100%;text-align:left;}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="view-login" style="padding:50px 24px;"><div id="login-content"></div></div>
+
+  <div id="view-app" class="hidden">
+    <div class="header">
+      <div>
+        <p class="display" style="font-size:18px;font-weight:700;margin:0;">Control Seguridad FADU</p>
+        <p id="user-sub" style="font-size:12px;opacity:.75;margin:2px 0 0;"></p>
+      </div>
+      <button id="btn-logout" style="color:#F7F4EC;font-size:20px;">⎋</button>
+    </div>
+    <div id="save-error" class="hidden" style="font-size:11px;color:var(--red);text-align:center;padding:6px 12px;">No se pudo guardar el último cambio. Revisá tu conexión.</div>
+    <div id="content-root" style="padding:14px 16px;"></div>
+  </div>
+</div>
+
+<div id="detail-root"></div>
+
+<div class="tabs hidden" id="tabs-nav">
+  <div class="tabs-inner">
+    <button class="tab-btn active" data-tab="inicio">🏠<span>Inicio</span></button>
+    <button class="tab-btn" data-tab="sectores">▦<span>Sectores</span></button>
+    <button class="tab-btn" data-tab="solicitudes">🔔<span id="badge-label">Solicitudes</span></button>
+    <button class="tab-btn" data-tab="historial">🕘<span>Historial</span></button>
+    <button class="tab-btn hidden" id="tab-btn-personal" data-tab="personal">👥<span>Personal</span></button>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+/* ======= PEGÁ ACÁ TU CONFIG DE FIREBASE (Configuración del proyecto > Tus apps) ======= */
+const firebaseConfig = {
+  apiKey: "AIzaSyApTkrL46F0XhmMbZ6dEXYOVzcBca-iCaM",
+  authDomain: "fadu-seguridad.firebaseapp.com",
+  projectId: "fadu-seguridad",
+  storageBucket: "fadu-seguridad.firebasestorage.app",
+  messagingSenderId: "440485002142",
+  appId: "1:440485002142:web:ad0a9dd7dc06742804348f"
+};
+/* ======================================================================================= */
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const STATE_DOC = doc(db, "app", "estado");
+
+const ZONES = [
+  { id: "100", label: "Sector 100" }, { id: "EP", label: "Entrepiso" },
+  { id: "DEP", label: "Depósitos" }, { id: "EP-AUX", label: "Auxiliares Entrepiso" },
+  { id: "200", label: "Sector 200" },
+];
+const DELAY_MS = 15 * 60 * 1000;
+
+const APP_VERSION = "1.9.0";
+const VERSION_HISTORY = [
+  { version: "1.6.0", changes: [
+    "Arreglado un error que dejaba de guardar cambios después de contradecir una solicitud (afectaba solo a esas aulas puntuales).",
+    "TV corregido en las aulas del Sector 100 — y ahora se autocorrige solo si algo así vuelve a pasar.",
+    "Aviso al pedir abrir/cerrar una puerta que ya está en ese estado.",
+    "Ícono 📝 en las aulas que tienen alguna nota cargada.",
+    "Las notas con hora ahora aparecen 30 minutos antes, y al cerrarlas no se borran — vuelven a aparecer la próxima vez que corresponda (ej: el viernes que viene).",
+    "Nueva pantalla \"Ver todas\" las notas, con filtro por día de la semana.",
+    "Marcar varias aulas cerradas y limpias a la vez desde la selección múltiple.",
+    "Historial: se puede filtrar por aula, y ahora muestra la hora del pedido y la hora de ejecución por separado.",
+    "Leyenda de íconos abajo de la pestaña Sectores.",
+  ]},
+  { version: "1.7.0", changes: [
+    "Las aulas con TV del Entrepiso ahora son su propio sector \"Auxiliares Entrepiso\", porque usan otro manojo de llaves.",
+    "Login con PIN propio: cada persona (nueva o ya registrada) elige su PIN de 4 dígitos. El jefe puede blanquearlo si alguien se lo olvida.",
+    "Al registrarse ahora se pregunta el turno (mañana/tarde/noche).",
+    "Los avisos de novedades por versión ahora se acumulan: si te salteaste alguna, la próxima vez ves todo lo que te perdiste junto.",
+  ]},
+  { version: "1.7.1", changes: [
+    "Los sectores en la pestaña \"Sectores\" ya no se deslizan de costado — ahora se ven todos de una, ocupando el mínimo espacio posible.",
+  ]},
+  { version: "1.8.0", changes: [
+    "Los sectores del Entrepiso vuelven a su lugar: las aulas con TV quedan en \"Entrepiso\" normal, y las 8 aulas con letra (112 y 124, las puntas) pasan a ser el sector \"Auxiliares Entrepiso\".",
+    "Sacada la leyenda \"no rutina\".",
+    "El login con PIN queda recordado 24 horas en el celular — no hace falta volver a buscarte en la lista y tipear el PIN cada vez que abrís la app.",
+    "Reordenados los sectores: 100, Entrepiso, Depósitos, Auxiliares, 200.",
+  ]},
+  { version: "1.8.1", changes: [
+    "Arreglo de emergencia: el cambio de la versión 1.8.0 que guardaba \"solo lo que cambiaba\" en vez de todo el documento rompió la app para varias aulas. Se volvió al método de guardado anterior (probado y estable).",
+    "Se agregó una reparación automática: si la base de datos quedó con algo en mal estado, la app lo corrige sola la próxima vez que se abre.",
+    "Número de versión visible abajo de todo en la pantalla de inicio de sesión.",
+  ]},
+  { version: "1.9.0", changes: [
+    "Las cátedras ahora se cargan con turno (mañana/tarde/noche) y días de la semana.",
+    "Al pedir apertura/cierre solo aparecen las cátedras del turno y el día de quien está pidiendo — así la lista no se llena de cátedras de otros turnos.",
+    "Si la cátedra que necesitás no aparece (porque es de otro turno/día), se puede cargar de nuevo ahí mismo, para ese turno y ese día.",
+    "Las cátedras que ya tenías cargadas (sin turno ni día) siguen apareciendo siempre, sin filtrar.",
+  ]},
+];
+// se mantiene por compatibilidad con el resto del código, siempre apunta a la version mas nueva
+const CHANGELOG = VERSION_HISTORY[VERSION_HISTORY.length - 1].changes;
+const DIAS = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+const DIAS_CORTO = [{v:0,l:"Dom"},{v:1,l:"Lun"},{v:2,l:"Mar"},{v:3,l:"Mié"},{v:4,l:"Jue"},{v:5,l:"Vie"},{v:6,l:"Sáb"}];
+
+function now(){ return Date.now(); }
+function fmtTime(ts){ if(!ts) return ""; return new Date(ts).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); }
+function elapsed(ts){ const m=Math.floor((now()-ts)/60000); if(m<1) return "recién"; if(m<60) return `hace ${m} min`; const h=Math.floor(m/60); return `hace ${h} h ${m%60} min`; }
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ---------- sonido / vibración / notificación ---------- */
+function playAlert() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const beep = (start) => {
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.type = "sine"; osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.exponentialRampToValueAtTime(0.35, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.18);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(start); osc.stop(start + 0.2);
+    };
+    const t0 = ctx.currentTime;
+    beep(t0); beep(t0 + 0.25); beep(t0 + 0.5);
+  } catch (e) { /* el navegador bloqueó el audio */ }
+}
+function notifyUser(title, body) {
+  playAlert();
+  if (navigator.vibrate) navigator.vibrate([150, 80, 150, 80, 150]);
+  try {
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification(title, { body });
+  } catch (e) {}
+}
+
+const notifiedRequestKeys = new Set();
+function checkPendingNotifications() {
+  if (!user || !data || user.role !== "recorrido") return;
+  const myZones = user.zones || [];
+  if (!myZones.length) return;
+  Object.values(data.doors).forEach(d => {
+    if (d.pendingRequest && myZones.includes(d.sector)) {
+      const key = `${d.id}-${d.pendingRequest.requestedAt}`;
+      if (!notifiedRequestKeys.has(key)) {
+        notifiedRequestKeys.add(key);
+        notifyUser("Control Seguridad FADU", `${d.pendingRequest.requestedBy} pide ${d.pendingRequest.type === "open" ? "abrir" : "cerrar"} ${d.label}`);
+      }
+    }
+  });
+}
+
+const notifiedNoteKeys = new Set();
+let noteCheckInterval = null;
+function startNoteChecker() {
+  if (noteCheckInterval) return;
+  noteCheckInterval = setInterval(() => {
+    if (!user || !data) return;
+    const d = new Date();
+    const nowHM = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+    const todayKey = d.toISOString().slice(0,10);
+    const dow = d.getDay();
+    (data.notes || []).forEach(n => {
+      if (!n.time || n.time !== nowHM) return;
+      if (n.recurrence === "semanal" && !(n.daysOfWeek||[]).includes(dow)) return;
+      const key = n.recurrence === "semanal" ? `${n.id}-${todayKey}` : n.id;
+      if (notifiedNoteKeys.has(key)) return;
+      notifiedNoteKeys.add(key);
+      notifyUser("Recordatorio · Control Seguridad FADU", n.text);
+    });
+  }, 20000);
+}
+
+/* ---------- construcción del edificio ---------- */
+function buildInitialDoors() {
+  const doors = {};
+  const add = (id, label, sector, sectorLabel, type, routine, hasTV, excludeFromStats) => {
+    doors[id] = { id, label, sector, sectorLabel, type, status: "closed", keyHolder: null, pendingRequest: null, routine, hasTV: !!hasTV, clean: false, anomalies: [], excludeFromStats: !!excludeFromStats };
+  };
+  const TV_100 = ["106","107","109","115","118"];
+  for (let n = 101; n <= 124; n++) {
+    add(String(n), String(n), "100", "Sector 100", "aula", true, TV_100.includes(String(n)));
+    if (n === 111) add("S", "Aula S (Feldman)", "100", "Sector 100", "aula", false);
+  }
+  const SPLIT = [112, 124]; // puntas del Entrepiso: sus 8 sub-aulas con letra van al sector Auxiliares
+  const TV_EP = ["EP101","EP103","EP106","EP109","EP111","EP113","EP115","EP121","EP123"];
+  for (let n = 101; n <= 124; n++) {
+    if (SPLIT.includes(n)) {
+      ["A","B","C","D"].forEach(l => add(`EP${n}${l}`, `EP${n}${l}`, "EP-AUX", "Auxiliares Entrepiso", "aula", true, false));
+    } else {
+      const id = `EP${n}`;
+      add(id, id, "EP", "Entrepiso", "aula", true, TV_EP.includes(id));
+    }
+    if (n === 110) add("EP-DISENO", "Depósito de Diseño", "EP", "Entrepiso", "deposito", false);
+  }
+  const TV_200 = ["205","206","207","208","226","228"];
+  for (let n = 201; n <= 228; n++) add(String(n), String(n), "200", "Sector 200", "aula", true, TV_200.includes(String(n)));
+  for (let n = 1; n <= 38; n++) { const num = String(n).padStart(2,"0"); add(`D${num}`, `Depósito ${num}`, "DEP", "Depósitos", "deposito", true); }
+  return doors;
+}
+const EMPTY_STATE = () => ({ doors: buildInitialDoors(), staff: {}, history: [], catedras: [], notes: [] });
+
+/* ---------- estado en memoria + persistencia (documento único en Firestore) ---------- */
+let data = null;
+let loaded = false;
+let user = null; // { name, role, zones: [] }
+let tab = "inicio";
+let activeSector = "100";
+let sectorStatusFilter = null; // null | "open" | "closed"
+let selectedDoorId = null;
+let selectionMode = false;
+let selectedIds = [];
+let noteDraftIds = null;
+let filterInicio = null;
+let historialFilter = "";
+let saving = false;
+
+async function persist() {
+  saving = true; render();
+  try {
+    const clean = JSON.parse(JSON.stringify(data)); // saca cualquier valor "undefined" que Firestore rechazaría
+    await setDoc(STATE_DOC, clean);
+    document.getElementById("save-error").classList.add("hidden");
+  } catch (e) { document.getElementById("save-error").classList.remove("hidden"); }
+  finally { saving = false; render(); }
+}
+function update(mutator) { data = mutator(data); persist(); render(); }
+
+onAuthStateChanged(auth, (u) => { if (!u) signInAnonymously(auth).catch(e => alert("Error de conexión: " + e.message)); else boot(); });
+
+// Vuelve a calcular los datos "de fábrica" de cada puerta (nombre, sector, si tiene TV, si es de rutina, etc.)
+// a partir del código actual, pero conserva el estado real (abierta/cerrada, llave, pedidos, limpieza, anomalías).
+// Así, cuando agregamos o corregimos algo en el código (ej: un ícono de TV que faltaba), se autocorrige solo
+// en cualquier celular que ya tenía datos guardados, sin que haya que borrar nada a mano.
+function reconcileDoors(storedDoors) {
+  const canonical = buildInitialDoors();
+  const result = {};
+  Object.keys(canonical).forEach(id => {
+    const c = canonical[id];
+    const s = storedDoors[id];
+    const pr = s && s.pendingRequest ? { ...s.pendingRequest, catedra: s.pendingRequest.catedra || null } : (s ? s.pendingRequest : c.pendingRequest);
+    result[id] = {
+      ...c,
+      status: s ? s.status : c.status,
+      keyHolder: s ? s.keyHolder : c.keyHolder,
+      pendingRequest: pr,
+      clean: s ? !!s.clean : c.clean,
+      anomalies: s && s.anomalies ? s.anomalies : c.anomalies,
+    };
+  });
+  return result;
+}
+
+// Corrige cualquier dato que haya quedado con una forma rara (ej: algo que debería ser una lista y no lo es).
+// Si detecta algo raro, lo arregla localmente y avisa para que boot() lo vuelva a guardar ya reparado.
+function sanitizeState(raw) {
+  let repaired = false;
+  let doors = (raw.doors && typeof raw.doors === "object" && !Array.isArray(raw.doors)) ? { ...raw.doors } : {};
+  if (!raw.doors || typeof raw.doors !== "object" || Array.isArray(raw.doors)) repaired = true;
+  Object.keys(doors).forEach(id => {
+    const d = doors[id];
+    if (!d || typeof d !== "object") { delete doors[id]; repaired = true; return; }
+    if (d.pendingRequest && (typeof d.pendingRequest !== "object" || Array.isArray(d.pendingRequest) || !d.pendingRequest.type)) { doors[id] = { ...d, pendingRequest: null }; repaired = true; }
+    if (!Array.isArray(d.anomalies)) { doors[id] = { ...doors[id], anomalies: [] }; repaired = true; }
+  });
+  let staff = (raw.staff && typeof raw.staff === "object" && !Array.isArray(raw.staff)) ? raw.staff : {};
+  if (!raw.staff || typeof raw.staff !== "object" || Array.isArray(raw.staff)) repaired = true;
+  let history = Array.isArray(raw.history) ? raw.history.filter(h => h && typeof h === "object" && h.doorId) : [];
+  if (!Array.isArray(raw.history)) repaired = true;
+  let catedras = Array.isArray(raw.catedras) ? raw.catedras.filter(c => typeof c === "string" || (c && typeof c === "object" && typeof c.name === "string")) : [];
+  if (!Array.isArray(raw.catedras)) repaired = true;
+  let notes = Array.isArray(raw.notes) ? raw.notes.filter(n => n && typeof n === "object" && n.text) : [];
+  if (!Array.isArray(raw.notes)) repaired = true;
+  return { sane: { doors, staff, history, catedras, notes }, repaired };
+}
+
+const SESSION_KEY = "fadu-session";
+function saveSession(name) { try { localStorage.setItem(SESSION_KEY, JSON.stringify({ name, ts: Date.now() })); } catch(e){} }
+function loadSessionName() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (Date.now() - s.ts > 24 * 60 * 60 * 1000) return null;
+    return s.name;
+  } catch (e) { return null; }
+}
+function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch(e){} }
+
+async function boot() {
+  const snap = await getDoc(STATE_DOC);
+  let needsRepair = false;
+  if (!snap.exists()) {
+    data = EMPTY_STATE();
+    await setDoc(STATE_DOC, JSON.parse(JSON.stringify(data)));
+  } else {
+    const raw = snap.data();
+    const { sane, repaired } = sanitizeState(raw);
+    needsRepair = repaired;
+    data = { doors: reconcileDoors(sane.doors), staff: sane.staff, history: sane.history, catedras: sane.catedras, notes: sane.notes };
+  }
+  loaded = true;
+  if (needsRepair) {
+    try { await setDoc(STATE_DOC, JSON.parse(JSON.stringify(data))); } catch (e) {}
+  }
+  const savedName = loadSessionName();
+  if (savedName && data.staff[savedName]) { loginAs(savedName, data.staff[savedName]); }
+  else { render(); }
+  onSnapshot(STATE_DOC, (snap) => {
+    if (!snap.exists()) return;
+    const raw = snap.data();
+    const { sane, repaired } = sanitizeState(raw);
+    data = { doors: reconcileDoors(sane.doors), staff: sane.staff, history: sane.history, catedras: sane.catedras, notes: sane.notes };
+    render();
+    if (repaired) { try { setDoc(STATE_DOC, JSON.parse(JSON.stringify(data))); } catch (e) {} }
+  });
+}
+
+/* ---------- login ---------- */
+let loginSelectedName = null;
+function renderLogin() {
+  const el = document.getElementById("login-content");
+  if (!loaded) { el.innerHTML = `<p style="text-align:center;color:var(--ink-soft);font-size:13px;">Cargando…</p>`; return; }
+  const staffArr = Object.entries(data.staff).map(([name, s]) => ({ name, ...s }));
+  const jefes = staffArr.filter(s => s.role === "jefe");
+  const pisos = staffArr.filter(s => s.role === "recorrido");
+
+  const header = `
+    <div style="text-align:center;margin-bottom:28px;">
+      <div style="width:52px;height:52px;border-radius:999px;background:var(--brass-soft);margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:22px;">🔑</div>
+      <h1 class="display" style="font-size:24px;font-weight:700;margin:0;">Control Seguridad FADU</h1>
+      <p style="font-size:13px;color:var(--ink-soft);">Control de aulas y depósitos</p>
+    </div>`;
+
+  const turnoChips = (selectedId) => `
+    <label class="mono" style="font-size:11px;color:var(--ink-soft);">TURNO</label>
+    <div style="display:flex;gap:8px;margin:8px 0 20px;">
+      <button data-turno="manana" class="chip turno-pick ${selectedId==='manana'?'active':''}" style="flex:1;">☀️ Mañana</button>
+      <button data-turno="tarde" class="chip turno-pick ${selectedId==='tarde'?'active':''}" style="flex:1;">🌤️ Tarde</button>
+      <button data-turno="noche" class="chip turno-pick ${selectedId==='noche'?'active':''}" style="flex:1;">🌙 Noche</button>
+    </div>`;
+  const pinFields = (label) => `
+    <label class="mono" style="font-size:11px;color:var(--ink-soft);">${label}</label>
+    <input id="new-pin" inputmode="numeric" maxlength="4" placeholder="••••" class="pin-input" style="margin:6px 0 10px;" />
+    <input id="new-pin-confirm" inputmode="numeric" maxlength="4" placeholder="Repetí el PIN" class="pin-input" style="margin:0 0 20px;" />`;
+
+  // ---- PANTALLA: crear el primer usuario del sistema ----
+  if (staffArr.length === 0) {
+    el.innerHTML = header + `
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">Primer uso: creá tu usuario.</p>
+      <label class="mono" style="font-size:11px;color:var(--ink-soft);">NOMBRE Y APELLIDO</label>
+      <input id="boot-name" placeholder="Ej: Marcelo Gómez" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:12px 14px;font-size:15px;margin:6px 0 16px;" />
+      <label class="mono" style="font-size:11px;color:var(--ink-soft);">ROL</label>
+      <div style="display:flex;gap:8px;margin:8px 0 20px;">
+        <button id="boot-role-recorrido" class="chip" style="flex:1;">🚶 Pisos</button>
+        <button id="boot-role-jefe" class="chip active" style="flex:1;">👔 Oficina Seguridad</button>
+      </div>
+      ${turnoChips(null)}
+      ${pinFields("ELEGÍ TU PIN (4 dígitos)")}
+      <p id="boot-pin-error" class="hidden" style="font-size:11px;color:var(--red);margin:-14px 0 14px;">Los PIN no coinciden.</p>
+      <button id="boot-submit" class="btn-primary" disabled>Crear usuario y entrar</button>`;
+    let bootRole = "jefe", bootTurno = null;
+    const nameI = document.getElementById("boot-name"), btn = document.getElementById("boot-submit");
+    const rRec = document.getElementById("boot-role-recorrido"), rJefe = document.getElementById("boot-role-jefe");
+    rRec.onclick = () => { bootRole = "recorrido"; rRec.classList.add("active"); rJefe.classList.remove("active"); };
+    rJefe.onclick = () => { bootRole = "jefe"; rJefe.classList.add("active"); rRec.classList.remove("active"); };
+    el.querySelectorAll(".turno-pick").forEach(b => b.onclick = () => { bootTurno = b.dataset.turno; el.querySelectorAll(".turno-pick").forEach(x=>x.classList.remove("active")); b.classList.add("active"); check(); });
+    const pinI = document.getElementById("new-pin"), pinC = document.getElementById("new-pin-confirm");
+    const check = () => btn.disabled = !(nameI.value.trim() && /^\d{4}$/.test(pinI.value) && /^\d{4}$/.test(pinC.value));
+    nameI.oninput = check; pinI.oninput = check; pinC.oninput = check;
+    btn.onclick = () => {
+      if (pinI.value !== pinC.value) { document.getElementById("boot-pin-error").classList.remove("hidden"); return; }
+      const name = nameI.value.trim();
+      const s = { role: bootRole, zones: [], turno: bootTurno, pin: pinI.value };
+      update(prev => ({ ...prev, staff: { ...prev.staff, [name]: s } }));
+      loginAs(name, s);
+    };
+    return;
+  }
+
+  // ---- PANTALLA: eligiendo PIN (usuario ya elegido de la lista) ----
+  if (loginSelectedName) {
+    const s = data.staff[loginSelectedName];
+    if (!s.pin) {
+      el.innerHTML = header + `
+        <p style="font-size:13px;color:var(--ink-soft);margin-bottom:4px;">Primera vez de <b>${esc(loginSelectedName)}</b>.</p>
+        <p style="font-size:12px;color:var(--ink-soft);margin-bottom:16px;">Elegí un PIN de 4 dígitos para entrar la próxima vez.</p>
+        ${pinFields("NUEVO PIN")}
+        <p id="pin-error" class="hidden" style="font-size:11px;color:var(--red);margin:-14px 0 14px;">Los PIN no coinciden.</p>
+        <button id="pin-submit" class="btn-primary" disabled>Guardar PIN y entrar</button>
+        <button id="pin-back" style="width:100%;margin-top:10px;font-size:12px;color:var(--ink-soft);">‹ Volver a la lista</button>`;
+      const pinI = document.getElementById("new-pin"), pinC = document.getElementById("new-pin-confirm"), btn = document.getElementById("pin-submit");
+      const check = () => btn.disabled = !(/^\d{4}$/.test(pinI.value) && /^\d{4}$/.test(pinC.value));
+      pinI.oninput = check; pinC.oninput = check;
+      btn.onclick = () => {
+        if (pinI.value !== pinC.value) { document.getElementById("pin-error").classList.remove("hidden"); return; }
+        const updated = { ...s, pin: pinI.value };
+        update(prev => ({ ...prev, staff: { ...prev.staff, [loginSelectedName]: updated } }));
+        loginAs(loginSelectedName, updated);
+      };
+      document.getElementById("pin-back").onclick = () => { loginSelectedName = null; renderLogin(); };
+    } else {
+      el.innerHTML = header + `
+        <p style="font-size:14px;font-weight:600;margin-bottom:14px;">👋 ${esc(loginSelectedName)}</p>
+        <label class="mono" style="font-size:11px;color:var(--ink-soft);">TU PIN</label>
+        <input id="login-pin" inputmode="numeric" maxlength="4" placeholder="••••" class="pin-input" style="margin:6px 0 10px;" />
+        <p id="login-pin-error" class="hidden" style="font-size:11px;color:var(--red);margin:0 0 14px;">PIN incorrecto.</p>
+        <button id="login-pin-submit" class="btn-primary" disabled>Ingresar</button>
+        <button id="pin-back" style="width:100%;margin-top:10px;font-size:12px;color:var(--ink-soft);">‹ Volver a la lista</button>`;
+      const pinI = document.getElementById("login-pin"), btn = document.getElementById("login-pin-submit");
+      pinI.oninput = () => btn.disabled = !/^\d{4}$/.test(pinI.value);
+      const tryLogin = () => {
+        if (pinI.value === s.pin) loginAs(loginSelectedName, s);
+        else document.getElementById("login-pin-error").classList.remove("hidden");
+      };
+      btn.onclick = tryLogin;
+      pinI.onkeydown = (e) => { if (e.key === "Enter" && !btn.disabled) tryLogin(); };
+      document.getElementById("pin-back").onclick = () => { loginSelectedName = null; renderLogin(); };
+      setTimeout(() => pinI.focus(), 50);
+    }
+    return;
+  }
+
+  // ---- PANTALLA: lista de usuarios + crear nuevo ----
+  const rowsHtml = (list, icon) => list.map(s => `<button class="row-btn login-pick" data-id="${esc(s.name)}">
+      <span style="font-size:14px;">${icon} ${esc(s.name)}</span>
+      <span style="font-size:11px;color:var(--ink-soft);">${(s.zones||[]).map(z=>ZONES.find(zz=>zz.id===z)?.label).join(", ")}</span>
+    </button>`).join("");
+
+  el.innerHTML = header + `
+    <label class="mono" style="font-size:11px;color:var(--ink-soft);">¿QUIÉN SOS?</label>
+    <div style="max-height:300px;overflow-y:auto;margin:8px 0 8px;">
+      ${jefes.length ? `<p style="font-size:11px;color:var(--ink-soft);margin:6px 0 2px;">Oficina Seguridad</p>${rowsHtml(jefes,"👔")}` : ""}
+      ${pisos.length ? `<p style="font-size:11px;color:var(--ink-soft);margin:10px 0 2px;">Pisos</p>${rowsHtml(pisos,"🚶")}` : ""}
+    </div>
+    <div id="new-user-toggle">
+      <button id="show-new-user" style="width:100%;padding:8px;border-radius:8px;border:1px dashed #D8CFB8;color:var(--ink-soft);font-size:12px;font-weight:600;margin-bottom:12px;">+ No estoy en la lista, crear usuario</button>
+    </div>
+    <div id="new-user-form" class="hidden card" style="margin-bottom:12px;">
+      <label class="mono" style="font-size:11px;color:var(--ink-soft);">NOMBRE Y APELLIDO</label>
+      <input id="new-user-name" placeholder="Ej: Marcelo Gómez" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:10px 12px;font-size:14px;margin:6px 0 12px;" />
+      <label class="mono" style="font-size:11px;color:var(--ink-soft);">ROL</label>
+      <div style="display:flex;gap:8px;margin:8px 0 12px;">
+        <button id="new-role-recorrido" class="chip" style="flex:1;">🚶 Pisos</button>
+        <button id="new-role-jefe" class="chip active" style="flex:1;">👔 Oficina Seguridad</button>
+      </div>
+      ${turnoChips(null)}
+      ${pinFields("ELEGÍ TU PIN (4 dígitos)")}
+      <p id="new-pin-error" class="hidden" style="font-size:11px;color:var(--red);margin:-14px 0 14px;">Los PIN no coinciden.</p>
+      <button id="new-user-submit" class="btn-primary" disabled>Crear y entrar</button>
+    </div>
+    <p style="font-size:11px;color:var(--ink-soft);text-align:center;">El acceso es por nombre + PIN propio.</p>
+    <p class="mono" style="font-size:10px;color:var(--ink-soft);text-align:center;margin-top:16px;opacity:0.6;">v${APP_VERSION}</p>`;
+
+  el.querySelectorAll(".login-pick").forEach(b => b.onclick = () => { loginSelectedName = b.dataset.id; renderLogin(); });
+  document.getElementById("show-new-user").onclick = () => { document.getElementById("new-user-toggle").classList.add("hidden"); document.getElementById("new-user-form").classList.remove("hidden"); };
+  let newRole = "jefe", newTurno = null;
+  const nr = document.getElementById("new-role-recorrido"), nj = document.getElementById("new-role-jefe");
+  nr.onclick = () => { newRole = "recorrido"; nr.classList.add("active"); nj.classList.remove("active"); };
+  nj.onclick = () => { newRole = "jefe"; nj.classList.add("active"); nr.classList.remove("active"); };
+  el.querySelectorAll(".turno-pick").forEach(b => b.onclick = () => { newTurno = b.dataset.turno; el.querySelectorAll(".turno-pick").forEach(x=>x.classList.remove("active")); b.classList.add("active"); checkNew(); });
+  const nnI = document.getElementById("new-user-name"), nBtn = document.getElementById("new-user-submit");
+  const nPinI = document.getElementById("new-pin"), nPinC = document.getElementById("new-pin-confirm");
+  const checkNew = () => nBtn.disabled = !(nnI.value.trim() && /^\d{4}$/.test(nPinI.value) && /^\d{4}$/.test(nPinC.value));
+  nnI.oninput = checkNew; nPinI.oninput = checkNew; nPinC.oninput = checkNew;
+  nBtn.onclick = () => {
+    if (nPinI.value !== nPinC.value) { document.getElementById("new-pin-error").classList.remove("hidden"); return; }
+    const name = nnI.value.trim();
+    const s = { role: newRole, zones: [], turno: newTurno, pin: nPinI.value };
+    update(prev => ({ ...prev, staff: { ...prev.staff, [name]: s } }));
+    loginAs(name, s);
+  };
+}
+
+function loginAs(name, s) {
+  user = { name, role: s.role, zones: s.zones || [], turno: s.turno || null };
+  saveSession(name);
+  if (typeof Notification !== "undefined" && Notification.permission === "default") { try { Notification.requestPermission(); } catch(e){} }
+  startNoteChecker();
+  document.getElementById("view-login").classList.add("hidden");
+  document.getElementById("view-app").classList.remove("hidden");
+  document.getElementById("tabs-nav").classList.remove("hidden");
+  document.getElementById("tab-btn-personal").classList.toggle("hidden", user.role !== "jefe");
+  document.getElementById("user-sub").textContent = `${user.name} · ${user.role==="jefe"?"Oficina Seguridad":"Pisos"}`;
+  render();
+  checkVersionPopup();
+}
+document.getElementById("btn-logout").onclick = () => { clearSession(); location.reload(); };
+document.querySelectorAll(".tab-btn").forEach(btn => btn.onclick = () => {
+  tab = btn.dataset.tab;
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  render();
+});
+
+/* ---------- acciones ---------- */
+function requestChange(doorId, type, catedra) {
+  update(prev => ({ ...prev, doors: { ...prev.doors, [doorId]: { ...prev.doors[doorId], pendingRequest: { type, requestedBy: user.name, requestedAt: now(), catedra: catedra || null } } } }));
+  selectedDoorId = null; render();
+}
+function markDoor(doorId, status, clean) {
+  update(prev => {
+    const d = prev.doors[doorId]; const pr = d.pendingRequest;
+    const entry = { id:`${doorId}-${now()}`, doorId, doorLabel:d.label, action:status, requestedBy: pr?pr.requestedBy:null, requestedAt: pr?pr.requestedAt:null, catedra: (pr && pr.catedra) ? pr.catedra : null, executedBy:user.name, executedAt: now() };
+    return { ...prev,
+      doors: { ...prev.doors, [doorId]: { ...d, status, keyHolder: status==="open"?user.name:null, pendingRequest:null, clean: status==="closed" ? !!clean : false } },
+      history: [entry, ...prev.history].slice(0,300) };
+  });
+  selectedDoorId = null; render();
+}
+function reportAnomaly(doorId, text) {
+  update(prev => {
+    const d = prev.doors[doorId];
+    const anomaly = { id:`${doorId}-an-${now()}`, text, reportedBy:user.name, reportedAt:now(), resolved:false };
+    return { ...prev, doors: { ...prev.doors, [doorId]: { ...d, anomalies: [anomaly, ...(d.anomalies||[])] } } };
+  });
+}
+function resolveAnomaly(doorId, anomalyId) {
+  update(prev => { const d = prev.doors[doorId]; return { ...prev, doors: { ...prev.doors, [doorId]: { ...d, anomalies: (d.anomalies||[]).map(a=>a.id===anomalyId?{...a,resolved:true}:a) } } }; });
+}
+function saveStaff(name, fields) { update(prev => ({ ...prev, staff: { ...prev.staff, [name]: { ...(prev.staff[name]||{}), ...fields } } })); }
+function deleteStaff(name) { update(prev => { const s = {...prev.staff}; delete s[name]; return {...prev, staff:s}; }); }
+function addCatedra(cObj) {
+  update(prev => {
+    const list = prev.catedras || [];
+    if (list.some(c => catedraName(c) === cObj.name)) return prev;
+    return { ...prev, catedras: [...list, cObj] };
+  });
+}
+function removeCatedra(name) { update(prev => ({ ...prev, catedras: (prev.catedras||[]).filter(c=>catedraName(c)!==name) })); }
+function renameCatedra(oldName, fields) {
+  update(prev => {
+    const catedras = (prev.catedras||[]).map(c => catedraName(c)===oldName ? { name: fields.name, turno: fields.turno, dias: fields.dias } : c);
+    const doors = { ...prev.doors };
+    if (fields.name !== oldName) {
+      Object.keys(doors).forEach(id => { if (doors[id].pendingRequest && doors[id].pendingRequest.catedra===oldName) doors[id] = { ...doors[id], pendingRequest: { ...doors[id].pendingRequest, catedra:fields.name } }; });
+    }
+    const history = fields.name !== oldName ? prev.history.map(h => h.catedra===oldName ? {...h, catedra:fields.name} : h) : prev.history;
+    return { ...prev, catedras, doors, history };
+  });
+}
+// una catedra puede ser un string viejo (de antes de tener turno/dias) o un objeto {name, turno, dias}
+function catedraName(c) { return typeof c === "string" ? c : c.name; }
+function catedraTurno(c) { return typeof c === "string" ? null : (c.turno || null); }
+function catedraDias(c) { return typeof c === "string" ? [] : (c.dias || []); }
+// las catedras sin turno/dia cargado siguen mostrandose siempre (compatibilidad con lo ya cargado).
+// las que sí tienen turno/dia, solo se muestran si coinciden con el turno de quien pide y el día de hoy.
+function catedrasForToday() {
+  const list = data.catedras || [];
+  const today = new Date().getDay();
+  const myTurno = user && user.turno;
+  return list.filter(c => {
+    const turno = catedraTurno(c), dias = catedraDias(c);
+    const turnoOk = !turno || !myTurno || turno === myTurno;
+    const diaOk = !dias.length || dias.includes(today);
+    return turnoOk && diaOk;
+  });
+}
+function addNote(note) { update(prev => ({ ...prev, notes: [{ id:`note-${now()}`, createdBy:user.name, createdAt:now(), doorIds: note.doorIds||[], dismissedOccurrences: [], ...note }, ...(prev.notes||[])] })); }
+function deleteNote(id) { update(prev => ({ ...prev, notes: (prev.notes||[]).filter(n=>n.id!==id) })); }
+function dismissNote(id, occurrenceKey) {
+  update(prev => ({ ...prev, notes: (prev.notes||[]).map(n => n.id===id ? { ...n, dismissedOccurrences: [...(n.dismissedOccurrences||[]), occurrenceKey] } : n) }));
+}
+
+function todayDateStr(d) { return (d||new Date()).toISOString().slice(0,10); }
+function occurrenceKeyFor(note, dateStr) { return note.recurrence === "semanal" ? `${note.id}|${dateStr}` : note.id; }
+function isNoteActiveNow(note, d) {
+  const dow = d.getDay();
+  if (note.recurrence === "semanal" && !(note.daysOfWeek||[]).includes(dow)) return false;
+  if (note.time) {
+    const [hh, mm] = note.time.split(":").map(Number);
+    const target = new Date(d); target.setHours(hh, mm - 30, 0, 0);
+    if (d < target) return false;
+  }
+  const key = occurrenceKeyFor(note, todayDateStr(d));
+  if ((note.dismissedOccurrences||[]).includes(key)) return false;
+  return true;
+}
+
+function confirmIfAlreadyInState(doorsArr, status) {
+  const already = doorsArr.filter(d => d.status === status && !d.pendingRequest);
+  if (already.length === 0) return true;
+  const accion = status === "open" ? "abierta" : "cerrada";
+  const pedir = status === "open" ? "apertura" : "cierre";
+  if (already.length === 1) return confirm(`${already[0].label} ya está ${accion}. ¿Igual querés pedir la ${pedir}?`);
+  return confirm(`${already.length} de las aulas seleccionadas ya están ${accion}s. ¿Igual querés pedir la ${pedir}?`);
+}
+
+function confirmIfMismatch(doorsArr, status) {
+  const mismatched = doorsArr.filter(d => d.pendingRequest && d.pendingRequest.type !== status);
+  if (mismatched.length === 0) return true;
+  const pedido = status === "open" ? "cerrar" : "abrir";
+  const accion = status === "open" ? "abierta" : "cerrada";
+  if (mismatched.length === 1) return confirm(`Solicitaron ${pedido} ${mismatched[0].label}. ¿Está seguro que quiere marcarla ${accion}?`);
+  return confirm(`${mismatched.length} de las puertas seleccionadas tienen pedido para ${pedido}. ¿Está seguro que quiere marcarlas ${accion}?`);
+}
+
+function checkVersionPopup() {
+  const seen = localStorage.getItem("fadu-seen-version");
+  if (seen === APP_VERSION) return;
+  const seenIdx = VERSION_HISTORY.findIndex(v => v.version === seen);
+  // si nunca vio nada, o vio una version que ya no esta en el historial, mostramos solo la ultima
+  const pending = seenIdx === -1 && seen ? [VERSION_HISTORY[VERSION_HISTORY.length - 1]] : VERSION_HISTORY.slice(seenIdx + 1);
+  if (!pending.length) { localStorage.setItem("fadu-seen-version", APP_VERSION); return; }
+  const root = document.getElementById("detail-root");
+  root.innerHTML = `<div class="sheet" id="version-popup-bg"><div class="sheet-inner">
+      <h2 class="display" style="font-size:20px;font-weight:700;margin:0 0 4px;">Novedades</h2>
+      <p class="mono" style="font-size:11px;color:var(--ink-soft);margin:0 0 16px;">Versión actual: ${APP_VERSION}</p>
+      ${pending.map(v => `
+        <p class="mono" style="font-size:11px;color:var(--brass);font-weight:700;margin:14px 0 6px;">VERSIÓN ${v.version}</p>
+        <ul style="margin:0 0 4px;padding-left:18px;">
+          ${v.changes.map(c => `<li style="font-size:13px;margin-bottom:8px;line-height:1.4;">${esc(c)}</li>`).join("")}
+        </ul>`).join("")}
+      <button id="version-popup-accept" class="btn-primary" style="margin-top:14px;">Aceptar</button>
+    </div></div>`;
+  document.getElementById("version-popup-accept").onclick = () => {
+    localStorage.setItem("fadu-seen-version", APP_VERSION);
+    root.innerHTML = "";
+  };
+}
+
+function startSelection(id) { selectionMode = true; selectedIds = [id]; render(); }
+function toggleSelect(id) { selectedIds = selectedIds.includes(id) ? selectedIds.filter(x=>x!==id) : [...selectedIds, id]; render(); }
+function clearSelection() { selectionMode = false; selectedIds = []; render(); }
+function bulkRequest(type) {
+  update(prev => { const doors = {...prev.doors}; selectedIds.forEach(id => { doors[id] = {...doors[id], pendingRequest:{type, requestedBy:user.name, requestedAt:now(), catedra:null}}; }); return {...prev, doors}; });
+  clearSelection();
+}
+function bulkMark(status, clean) {
+  update(prev => {
+    const doors = {...prev.doors}; const entries = [];
+    selectedIds.forEach(id => {
+      const d = doors[id]; const pr = d.pendingRequest;
+      entries.push({ id:`${id}-${now()}-${Math.random().toString(36).slice(2,6)}`, doorId:id, doorLabel:d.label, action:status, requestedBy:pr?pr.requestedBy:null, requestedAt:pr?pr.requestedAt:null, catedra: (pr && pr.catedra) ? pr.catedra : null, executedBy:user.name, executedAt:now() });
+      doors[id] = { ...d, status, keyHolder: status==="open"?user.name:null, pendingRequest:null, clean: status==="closed" ? !!clean : false };
+    });
+    return { ...prev, doors, history: [...entries, ...prev.history].slice(0,300) };
+  });
+  clearSelection();
+}
+
+/* ---------- placas de puerta ---------- */
+let pressTimer = null, firedLongPress = false;
+function plateHTML(d) {
+  const pr = d.pendingRequest;
+  const delayed = pr && (now()-pr.requestedAt>DELAY_MS);
+  let dotColor = d.status==="open" ? "var(--green)" : "var(--red)";
+  let dotClass = "", tag = "";
+  if (pr) {
+    dotColor = pr.type==="open" ? "var(--green)" : "var(--red)";
+    dotClass = pr.type==="open" ? (delayed?"pgf":"pg") : (delayed?"prf":"pr");
+    tag = `<span class="mono" style="font-size:8px;margin-top:2px;color:${dotColor}">${delayed?"¡demorada!":pr.type==="open"?"piden abrir":"piden cerrar"}</span>`;
+  }
+  const selected = selectedIds.includes(d.id);
+  const hasNotes = (data.notes||[]).some(n => n.doorIds && n.doorIds.includes(d.id));
+  return `<button class="plate" data-door="${d.id}"
+      style="${selected?'background:var(--brass-soft);border-color:var(--brass);border-width:2px;':''}">
+    ${d.hasTV ? '<span style="position:absolute;top:3px;left:3px;font-size:10px;">📺</span>' : ''}
+    ${(d.anomalies||[]).some(a=>!a.resolved) ? '<span style="position:absolute;bottom:3px;right:3px;font-size:10px;">⚠️</span>' : ''}
+    ${d.status==="closed" && d.clean ? '<span style="position:absolute;bottom:3px;left:3px;font-size:10px;">✅</span>' : ''}
+    ${selectionMode ? `<span style="position:absolute;top:3px;right:3px;width:14px;height:14px;border-radius:4px;border:1px solid var(--brass);background:${selected?'var(--brass)':'#fff'};color:#fff;font-size:9px;display:flex;align-items:center;justify-content:center;">${selected?'✓':''}</span>` : (hasNotes ? '<span style="position:absolute;top:3px;right:3px;font-size:10px;">📝</span>' : '')}
+    <span class="dot ${dotClass}" style="background:${dotColor}"></span>
+    <span class="mono" style="font-size:11px;font-weight:600;text-align:center;line-height:1.1;">${esc(d.label)}</span>${tag}
+  </button>`;
+}
+function bindPlates(root) {
+  root.querySelectorAll("[data-door]").forEach(b => {
+    const id = b.dataset.door;
+    const start = () => { firedLongPress = false; pressTimer = setTimeout(() => { firedLongPress = true; startSelection(id); if (navigator.vibrate) navigator.vibrate(25); }, 450); };
+    const cancel = () => { if (pressTimer) clearTimeout(pressTimer); };
+    b.addEventListener("touchstart", start); b.addEventListener("touchend", cancel); b.addEventListener("touchmove", cancel);
+    b.addEventListener("mousedown", start); b.addEventListener("mouseup", cancel); b.addEventListener("mouseleave", cancel);
+    b.addEventListener("contextmenu", e => e.preventDefault());
+    b.onclick = () => { if (firedLongPress) { firedLongPress = false; return; } if (selectionMode) toggleSelect(id); else { selectedDoorId = id; render(); } };
+  });
+}
+
+/* ---------- render principal ---------- */
+function render() {
+  if (!loaded) return;
+  if (!user) { renderLogin(); return; }
+
+  checkPendingNotifications();
+  const allDoors = Object.values(data.doors);
+  const pendingList = allDoors.filter(d=>d.pendingRequest).sort((a,b)=>a.pendingRequest.requestedAt-b.pendingRequest.requestedAt);
+  document.getElementById("badge-label").textContent = pendingList.length ? `Solicitudes (${pendingList.length})` : "Solicitudes";
+  document.getElementById("tabs-nav").classList.toggle("hidden", selectionMode);
+  document.getElementById("user-sub").textContent = `${user.name} · ${user.role==="jefe"?"Oficina Seguridad":"Pisos"} ${saving?"· guardando…":""}`;
+
+  const root = document.getElementById("content-root");
+  root.style.paddingBottom = selectionMode ? "230px" : "76px";
+  if (tab==="inicio") root.innerHTML = renderInicio(allDoors, pendingList);
+  if (tab==="sectores") root.innerHTML = renderSectores(allDoors);
+  if (tab==="solicitudes") root.innerHTML = renderSolicitudes(pendingList);
+  if (tab==="historial") root.innerHTML = renderHistorial();
+  if (tab==="personal" && user.role==="jefe") root.innerHTML = renderPersonal();
+  bindTabHandlers(root);
+  bindPlates(root);
+
+  renderSelectionBar(pendingList);
+  renderDoorDetail();
+}
+
+/* ---------- Inicio ---------- */
+function renderInicio(allDoors, pendingList) {
+  const myZones = user.zones || [];
+  const doorsForStats = allDoors.filter(d => !d.excludeFromStats);
+  const openCount = doorsForStats.filter(d=>d.status==="open").length;
+  const closedCount = doorsForStats.filter(d=>d.status==="closed").length;
+  const delayedCount = pendingList.filter(d=>now()-d.pendingRequest.requestedAt>DELAY_MS).length;
+  const doorsWithAnomalies = allDoors.filter(d => (d.anomalies||[]).some(a=>!a.resolved));
+  const myPending = pendingList.filter(d => myZones.includes(d.sector));
+  const today = new Date().getDay();
+  const notes = [...(data.notes||[])].sort((a,b)=>b.createdAt-a.createdAt);
+
+  let html = "";
+  if (user.role==="recorrido" && myPending.length) {
+    html += myPending.map(d => `<button data-door="${d.id}" class="card" style="display:flex;gap:10px;align-items:center;width:100%;margin-bottom:8px;background:${d.pendingRequest.type==="open"?"var(--green-soft)":"var(--red-soft)"};border-color:${d.pendingRequest.type==="open"?"var(--green)":"var(--red)"};text-align:left;">
+        <span class="dot ${d.pendingRequest.type==="open"?"pg":"pr"}" style="background:${d.pendingRequest.type==="open"?"var(--green)":"var(--red)"};width:12px;height:12px;"></span>
+        <div><p style="font-size:14px;font-weight:700;margin:0;">${esc(d.pendingRequest.requestedBy)} pide ${d.pendingRequest.type==="open"?"ABRIR":"CERRAR"} ${esc(d.label)}${d.pendingRequest.catedra?` · Cátedra ${esc(d.pendingRequest.catedra)}`:""}</p>
+        <p style="font-size:11px;color:var(--ink-soft);margin:2px 0 0;">${elapsed(d.pendingRequest.requestedAt)}</p></div></button>`).join("");
+  }
+
+  html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <p class="display" style="font-size:18px;font-weight:700;margin:0;">Notas</p>
+      <div style="display:flex;gap:10px;">
+        <button id="see-all-notes" style="font-size:12px;font-weight:600;color:var(--brass);">Ver todas</button>
+        <button id="toggle-note-form" style="font-size:12px;font-weight:600;color:var(--brass);">+ Agregar</button>
+      </div>
+    </div>
+    <div id="note-form-root"></div>`;
+  const nowD = new Date();
+  const activeNotes = notes.filter(n => isNoteActiveNow(n, nowD));
+  if (!activeNotes.length) html += `<p style="font-size:12px;color:var(--ink-soft);margin-bottom:16px;">No hay notas activas ahora mismo.</p>`;
+  else {
+    html += `<div style="margin-bottom:20px;">` + activeNotes.map(n => `
+      <div class="card" style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;gap:8px;">
+          <p style="font-size:13px;font-weight:600;margin:0;">${esc(n.text)}</p>
+          <button data-close-note="${n.id}" style="color:var(--ink-soft);font-size:11px;font-weight:600;white-space:nowrap;">Cerrar ✕</button>
+        </div>
+        ${n.doorIds && n.doorIds.length ? `<p style="font-size:11px;color:var(--brass);font-weight:600;margin:2px 0 0;">Aulas: ${n.doorIds.map(id=>data.doors[id]?.label||id).join(", ")}</p>` : ""}
+        <p style="font-size:11px;color:var(--ink-soft);margin:2px 0 0;">${n.recurrence==="semanal"?`Todos los ${(n.daysOfWeek||[]).map(v=>DIAS[v]).join(", ")}`:"Una vez"}${n.time?` · ${n.time} hs`:""} · cargó ${esc(n.createdBy)}</p>
+      </div>`).join("") + `</div>`;
+  }
+
+  html += `<p class="display" style="font-size:18px;font-weight:700;margin-bottom:10px;">Resumen</p>
+    <div class="grid2" style="margin-bottom:12px;">
+      <button data-filter="abiertas" class="card" style="text-align:left;${filterInicio==='abiertas'?'background:var(--brass-soft);border-color:var(--brass);':''}"><p style="font-size:22px;font-weight:700;color:var(--green);margin:0;">${openCount}</p><p style="font-size:11px;color:var(--ink-soft);margin:2px 0 0;">Puertas abiertas</p></button>
+      <button data-filter="cerradas" class="card" style="text-align:left;${filterInicio==='cerradas'?'background:var(--brass-soft);border-color:var(--brass);':''}"><p style="font-size:22px;font-weight:700;color:var(--red);margin:0;">${closedCount}</p><p style="font-size:11px;color:var(--ink-soft);margin:2px 0 0;">Puertas cerradas</p></button>
+      <button data-filter="solicitudes" class="card" style="text-align:left;${filterInicio==='solicitudes'?'background:var(--brass-soft);border-color:var(--brass);':''}"><p style="font-size:22px;font-weight:700;margin:0;">${pendingList.length}</p><p style="font-size:11px;color:var(--ink-soft);margin:2px 0 0;">Solicitudes</p></button>
+      <button data-filter="demoradas" class="card" style="text-align:left;${filterInicio==='demoradas'?'background:var(--brass-soft);border-color:var(--brass);':''}"><p style="font-size:22px;font-weight:700;color:var(--red);margin:0;">${delayedCount}</p><p style="font-size:11px;color:var(--ink-soft);margin:2px 0 0;">Demoradas</p></button>
+      <button data-filter="anomalias" class="card" style="text-align:left;${filterInicio==='anomalias'?'background:var(--brass-soft);border-color:var(--brass);':''}"><p style="font-size:22px;font-weight:700;color:var(--red);margin:0;">${doorsWithAnomalies.length}</p><p style="font-size:11px;color:var(--ink-soft);margin:2px 0 0;">Anomalías</p></button>
+    </div>`;
+
+  if (filterInicio) {
+    const labels = { abiertas:"Puertas abiertas", cerradas:"Puertas cerradas", solicitudes:"Solicitudes pendientes", demoradas:"Solicitudes demoradas", anomalias:"Con anomalías" };
+    let list = [];
+    if (filterInicio==="abiertas") list = doorsForStats.filter(d=>d.status==="open");
+    else if (filterInicio==="cerradas") list = doorsForStats.filter(d=>d.status==="closed");
+    else if (filterInicio==="solicitudes") list = pendingList;
+    else if (filterInicio==="demoradas") list = pendingList.filter(d=>now()-d.pendingRequest.requestedAt>DELAY_MS);
+    else if (filterInicio==="anomalias") list = doorsWithAnomalies;
+    html += `<p class="mono" style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">${labels[filterInicio].toUpperCase()} (${list.length})</p>`;
+    if (!list.length) html += `<p style="font-size:13px;color:var(--ink-soft);">No hay ninguna en esta categoría.</p>`;
+    html += list.map(d => `<button data-door="${d.id}" class="row-btn">
+        <span style="font-size:13px;">${esc(d.label)} <span style="color:var(--ink-soft);">· ${esc(d.sectorLabel)}</span></span>
+        <span style="font-size:11px;color:var(--ink-soft);">${filterInicio==="anomalias" ? d.anomalies.filter(a=>!a.resolved).map(a=>esc(a.text)).join(", ") : d.pendingRequest ? `${d.pendingRequest.type==="open"?"piden abrir":"piden cerrar"}${d.pendingRequest.catedra?` · Cát. ${esc(d.pendingRequest.catedra)}`:""} · ${elapsed(d.pendingRequest.requestedAt)}` : (d.status==="open"?"abierta":"cerrada")}</span>
+      </button>`).join("");
+  }
+
+  if (user.role==="recorrido") {
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 2px;">
+        <p class="display" style="font-size:18px;font-weight:700;margin:0;">${myZones.length?"Mis sectores":"Sin sector asignado"}</p>
+        <button data-goto="sectores" style="font-size:12px;font-weight:600;color:var(--brass);">Ver todos ▦</button>
+      </div>`;
+    if (myZones.length) {
+      html += `<p style="font-size:11px;color:var(--ink-soft);margin-bottom:8px;">Mantené presionada un aula para seleccionar varias juntas.</p>`;
+      myZones.forEach(zoneId => {
+        const zoneLabel = ZONES.find(z=>z.id===zoneId)?.label;
+        const doorsInZone = allDoors.filter(d=>d.sector===zoneId);
+        html += `<p class="mono" style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">${zoneLabel?.toUpperCase()}</p><div class="grid4" style="margin-bottom:20px;">${doorsInZone.map(plateHTML).join("")}</div>`;
+      });
+    } else html += `<p style="font-size:13px;color:var(--ink-soft);margin-bottom:20px;">Todavía no tenés un piso asignado por la oficina de seguridad.</p>`;
+  } else if (pendingList.length) {
+    html += `<p class="display" style="font-size:18px;font-weight:700;margin-bottom:10px;">Solicitudes en curso</p>` +
+      pendingList.slice(0,5).map(d=>`<button data-door="${d.id}" class="row-btn"><span style="font-size:13px;">${esc(d.label)} · ${d.pendingRequest.type==="open"?"abrir":"cerrar"}${d.pendingRequest.catedra?` · Cát. ${esc(d.pendingRequest.catedra)}`:""}</span><span style="font-size:11px;color:var(--ink-soft);">${elapsed(d.pendingRequest.requestedAt)}</span></button>`).join("");
+  }
+  return html;
+}
+
+/* ---------- Sectores ---------- */
+function renderSectores(allDoors) {
+  const shown = allDoors.filter(d=>d.sector===activeSector && (!sectorStatusFilter || d.status===sectorStatusFilter));
+  return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
+      ${ZONES.map(z=>`<button class="chip sector-pick ${activeSector===z.id?"active":""}" data-zone="${z.id}" style="font-size:11px;padding:6px 10px;">${z.label}</button>`).join("")}
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button id="filter-open-toggle" class="chip" style="${sectorStatusFilter==="open"?"border-color:var(--green);background:var(--green-soft);":""}">🚪 Solo abiertas ${sectorStatusFilter==="open"?`(${shown.length})`:""}</button>
+      <button id="filter-closed-toggle" class="chip" style="${sectorStatusFilter==="closed"?"border-color:var(--red);background:var(--red-soft);":""}">🚪 Solo cerradas ${sectorStatusFilter==="closed"?`(${shown.length})`:""}</button>
+    </div>
+    <p style="font-size:11px;color:var(--ink-soft);margin-bottom:8px;">Mantené presionada un aula para seleccionar varias juntas.</p>
+    ${!shown.length ? `<p style="font-size:13px;color:var(--ink-soft);">No hay ninguna en este sector con ese filtro.</p>` : ""}
+    <div class="grid4">${shown.map(plateHTML).join("")}</div>
+    <div style="margin-top:20px;padding-top:12px;border-top:1px solid #E4DECB;display:flex;flex-wrap:wrap;gap:10px;font-size:10px;color:var(--ink-soft);">
+      <span>📺 tiene TV</span>
+      <span>✅ cerrada y limpia</span>
+      <span>⚠️ anomalía sin resolver</span>
+      <span>📝 tiene notas</span>
+      <span>🔴/🟢 parpadeo = piden cerrar/abrir</span>
+    </div>`;
+}
+
+/* ---------- Solicitudes ---------- */
+function renderSolicitudes(pendingList) {
+  if (!pendingList.length) return `<p style="text-align:center;color:var(--ink-soft);padding:40px 0;font-size:13px;">No hay solicitudes pendientes.</p>`;
+  return `<p class="display" style="font-size:18px;font-weight:700;margin-bottom:10px;">Solicitudes pendientes</p>` +
+    pendingList.map(d => {
+      const delayed = now()-d.pendingRequest.requestedAt>DELAY_MS;
+      return `<button data-door="${d.id}" class="card" style="display:flex;justify-content:space-between;width:100%;margin-bottom:8px;background:${d.pendingRequest.type==="open"?"var(--green-soft)":"var(--red-soft)"};text-align:left;">
+        <div><p style="font-size:14px;font-weight:700;margin:0;">${esc(d.label)} · ${d.pendingRequest.type==="open"?"ABRIR":"CERRAR"}</p>
+        <p style="font-size:11px;color:var(--ink-soft);margin:2px 0 0;">pidió ${esc(d.pendingRequest.requestedBy)}${d.pendingRequest.catedra?` (Cátedra ${esc(d.pendingRequest.catedra)})`:""} · ${esc(d.sectorLabel)}</p></div>
+        <span style="font-size:11px;color:${delayed?"var(--red)":"var(--ink-soft)"};font-weight:${delayed?700:400};align-self:center;">${delayed?"¡demorada! ":""}${elapsed(d.pendingRequest.requestedAt)}</span></button>`;
+    }).join("");
+}
+
+/* ---------- Historial ---------- */
+function renderHistorial() {
+  const all = [...data.history].sort((a,b) => b.executedAt - a.executedAt);
+  const filtered = historialFilter ? all.filter(x => x.doorLabel.toLowerCase().includes(historialFilter.toLowerCase())) : all;
+  const searchBox = `<div style="margin-bottom:12px;">
+      <input id="historial-search" value="${esc(historialFilter)}" placeholder="Filtrar por aula (ej: 106, EP110, S)" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;" />
+    </div>`;
+  if (!all.length) return `<p class="display" style="font-size:18px;font-weight:700;margin-bottom:10px;">Historial</p>` + searchBox + `<p style="text-align:center;color:var(--ink-soft);padding:20px 0;font-size:13px;">Todavía no hay movimientos registrados.</p>`;
+  return `<p class="display" style="font-size:18px;font-weight:700;margin-bottom:10px;">Historial</p>` + searchBox +
+    (!filtered.length ? `<p style="text-align:center;color:var(--ink-soft);padding:20px 0;font-size:13px;">Ningún movimiento coincide con "${esc(historialFilter)}".</p>` : "") +
+    filtered.map(x => `<div style="padding:8px 0;border-bottom:1px solid #E4DECB;">
+      <div style="display:flex;justify-content:space-between;"><span style="font-size:14px;font-weight:600;">${esc(x.doorLabel)} · ${x.action==="open"?"Abierta":"Cerrada"}</span></div>
+      <p style="font-size:12px;color:var(--ink-soft);margin:2px 0 0;">${x.requestedBy?`pidió ${esc(x.requestedBy)} a las ${fmtTime(x.requestedAt)}${x.catedra?` (Cátedra ${esc(x.catedra)})`:""}`:"📻 sin solicitud (handy)"}</p>
+      <p style="font-size:12px;color:var(--ink-soft);margin:1px 0 0;">ejecutó ${esc(x.executedBy)} a las ${fmtTime(x.executedAt)}</p>
+    </div>`).join("");
+}
+
+function bindHistorialSearch(root) {
+  const inp = document.getElementById("historial-search");
+  if (!inp) return;
+  inp.oninput = (e) => {
+    const pos = e.target.selectionStart;
+    historialFilter = e.target.value;
+    root.innerHTML = renderHistorial();
+    bindHistorialSearch(root);
+    const newInp = document.getElementById("historial-search");
+    newInp.focus();
+    newInp.setSelectionRange(pos, pos);
+  };
+}
+
+/* ---------- Personal ---------- */
+function renderPersonal() {
+  const names = Object.keys(data.staff);
+  const catedras = data.catedras || [];
+  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+      <p class="display" style="font-size:18px;font-weight:700;margin:0;">Personal</p>
+      <button id="add-staff-btn" style="background:var(--ink);color:#F7F4EC;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:600;">+ Agregar</button>
+    </div>
+    <p style="font-size:11px;color:var(--ink-soft);margin-bottom:12px;">Tocá a una persona para cambiarle los pisos o el rol.</p>
+    ${!names.length ? `<p style="font-size:13px;color:var(--ink-soft);">Todavía no hay nadie cargado.</p>` : names.map(n => `
+      <button class="row-btn" data-edit-staff="${esc(n)}">
+        <span style="font-size:14px;">${data.staff[n].role==="jefe"?"👔":"🚶"} ${esc(n)} ${data.staff[n].turno ? {manana:"☀️",tarde:"🌤️",noche:"🌙"}[data.staff[n].turno] : ""}</span>
+        <span style="font-size:12px;color:var(--ink-soft);">${(data.staff[n].zones||[]).length ? data.staff[n].zones.map(z=>ZONES.find(zz=>zz.id===z)?.label).join(", ") : "sin piso"}</span>
+      </button>`).join("")}
+    <div style="margin-top:32px;">
+      <p class="display" style="font-size:18px;font-weight:700;margin-bottom:6px;">Cátedras</p>
+      <p style="font-size:11px;color:var(--ink-soft);margin-bottom:10px;">Al pedir apertura/cierre se muestran solo las cátedras del turno y el día de quien pide. Tocá una para corregirla — los pedidos y el historial se actualizan solos.</p>
+      <div class="card" style="margin-bottom:14px;">
+        <input id="new-catedra-input" placeholder="Ej: González" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:10px;" />
+        <label class="mono" style="font-size:11px;color:var(--ink-soft);">TURNO</label>
+        <div style="display:flex;gap:6px;margin:6px 0 10px;">
+          <button data-newcat-turno="manana" class="chip newcat-turno" style="flex:1;font-size:12px;">☀️ Mañana</button>
+          <button data-newcat-turno="tarde" class="chip newcat-turno" style="flex:1;font-size:12px;">🌤️ Tarde</button>
+          <button data-newcat-turno="noche" class="chip newcat-turno" style="flex:1;font-size:12px;">🌙 Noche</button>
+        </div>
+        <label class="mono" style="font-size:11px;color:var(--ink-soft);">DÍAS</label>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 12px;">
+          ${["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map((l,i)=>`<button data-newcat-day="${i}" class="chip newcat-day" style="font-size:11px;padding:5px 9px;">${l}</button>`).join("")}
+        </div>
+        <button id="new-catedra-btn" class="btn-primary" disabled>+ Agregar cátedra</button>
+      </div>
+      ${!catedras.length ? `<p style="font-size:13px;color:var(--ink-soft);">Todavía no cargaste ninguna cátedra.</p>` : `<div style="display:flex;flex-wrap:wrap;gap:8px;">${catedras.map(c=>{
+        const turno = catedraTurno(c), dias = catedraDias(c);
+        const turnoIcon = turno ? {manana:"☀️",tarde:"🌤️",noche:"🌙"}[turno] : "";
+        const diasTxt = dias.length ? dias.map(d=>["D","L","M","X","J","V","S"][d]).join("") : "";
+        return `<button class="chip" data-edit-catedra="${esc(catedraName(c))}">✎ ${esc(catedraName(c))}${turnoIcon?` ${turnoIcon}`:""}${diasTxt?` ${diasTxt}`:""}</button>`;
+      }).join("")}</div>`}
+    </div>`;
+}
+
+/* ---------- handlers por pestaña ---------- */
+function bindTabHandlers(root) {
+  if (tab==="inicio") {
+    root.querySelectorAll("[data-filter]").forEach(b => b.onclick = () => { filterInicio = filterInicio===b.dataset.filter?null:b.dataset.filter; render(); });
+    root.querySelectorAll("[data-goto]").forEach(b => b.onclick = () => { tab = b.dataset.goto; document.querySelectorAll(".tab-btn").forEach(x=>x.classList.toggle("active", x.dataset.tab===tab)); render(); });
+    root.querySelectorAll("[data-close-note]").forEach(b => b.onclick = () => {
+      const n = (data.notes||[]).find(x=>x.id===b.dataset.closeNote);
+      if (n) dismissNote(n.id, occurrenceKeyFor(n, todayDateStr(new Date())));
+    });
+    const seeAllBtn = document.getElementById("see-all-notes");
+    if (seeAllBtn) seeAllBtn.onclick = () => renderAllNotesSheet();
+    const toggleBtn = document.getElementById("toggle-note-form");
+    if (toggleBtn) toggleBtn.onclick = () => {
+      const r = document.getElementById("note-form-root");
+      if (r.innerHTML) { r.innerHTML = ""; return; }
+      r.innerHTML = noteFormHTML();
+      bindNoteForm(r, (note) => { addNote(note); r.innerHTML = ""; });
+    };
+  }
+  if (tab==="sectores") {
+    root.querySelectorAll(".sector-pick").forEach(b => b.onclick = () => { activeSector = b.dataset.zone; render(); });
+    const openBtn = document.getElementById("filter-open-toggle");
+    if (openBtn) openBtn.onclick = () => { sectorStatusFilter = sectorStatusFilter==="open" ? null : "open"; render(); };
+    const closedBtn = document.getElementById("filter-closed-toggle");
+    if (closedBtn) closedBtn.onclick = () => { sectorStatusFilter = sectorStatusFilter==="closed" ? null : "closed"; render(); };
+  }
+  if (tab==="historial") bindHistorialSearch(root);
+  if (tab==="personal" && user.role==="jefe") {
+    const addBtn = document.getElementById("add-staff-btn");
+    if (addBtn) addBtn.onclick = () => openStaffSheet(null);
+    root.querySelectorAll("[data-edit-staff]").forEach(b => b.onclick = () => openStaffSheet(b.dataset.editStaff));
+    root.querySelectorAll("[data-edit-catedra]").forEach(b => b.onclick = () => openCatedraSheet(b.dataset.editCatedra));
+    const ci = document.getElementById("new-catedra-input"), cb = document.getElementById("new-catedra-btn");
+    if (cb) {
+      let newCatTurno = null, newCatDias = [];
+      const check = () => cb.disabled = !ci.value.trim();
+      ci.oninput = check;
+      root.querySelectorAll(".newcat-turno").forEach(b => b.onclick = () => { newCatTurno = newCatTurno===b.dataset.newcatTurno ? null : b.dataset.newcatTurno; root.querySelectorAll(".newcat-turno").forEach(x=>x.classList.toggle("active", x.dataset.newcatTurno===newCatTurno)); });
+      root.querySelectorAll(".newcat-day").forEach(b => b.onclick = () => {
+        const d = parseInt(b.dataset.newcatDay);
+        newCatDias = newCatDias.includes(d) ? newCatDias.filter(x=>x!==d) : [...newCatDias, d].sort();
+        b.classList.toggle("active", newCatDias.includes(d));
+      });
+      cb.onclick = () => {
+        if (!ci.value.trim()) return;
+        addCatedra({ name: ci.value.trim(), turno: newCatTurno, dias: newCatDias });
+        ci.value = ""; newCatTurno = null; newCatDias = [];
+        root.querySelectorAll(".newcat-turno, .newcat-day").forEach(x=>x.classList.remove("active"));
+        check();
+      };
+    }
+  }
+}
+
+function noteFormHTML(doorLabels) {
+  return `<div class="card" style="margin-bottom:14px;">
+    ${doorLabels ? `<p style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">PARA ESTAS AULAS</p>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">${doorLabels.map(l=>`<span class="chip active">${esc(l)}</span>`).join("")}</div>` : ""}
+    <input id="note-text" placeholder="Ej: abrir la puerta entre 106 y 107" style="width:100%;border:1px solid #D8CFB8;border-radius:6px;padding:9px 10px;font-size:13px;margin-bottom:8px;" />
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <button id="note-rec-unica" class="chip active" style="flex:1;">Una vez</button>
+      <button id="note-rec-semanal" class="chip" style="flex:1;">Todas las semanas</button>
+    </div>
+    <div id="note-days" class="hidden" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">
+      ${DIAS_CORTO.map(d=>`<button class="chip note-day" data-day="${d.v}" style="${d.v===5?'background:var(--brass-soft);':''}">${d.v===5?'✓ ':''}${d.l}</button>`).join("")}
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+      <label style="font-size:11px;color:var(--ink-soft);">Hora (opcional):</label>
+      <input id="note-time" type="time" style="border:1px solid #D8CFB8;border-radius:6px;padding:4px 8px;font-size:12px;" />
+    </div>
+    <button id="note-save" class="btn-primary" disabled>Guardar nota</button>
+  </div>`;
+}
+function bindNoteForm(root, onSave) {
+  let recurrence = "unica", daysOfWeek = [5];
+  const textI = root.querySelector("#note-text"), saveBtn = root.querySelector("#note-save");
+  const recU = root.querySelector("#note-rec-unica"), recS = root.querySelector("#note-rec-semanal"), daysWrap = root.querySelector("#note-days");
+  const checkValid = () => saveBtn.disabled = !textI.value.trim() || (recurrence==="semanal" && daysOfWeek.length===0);
+  textI.oninput = checkValid;
+  recU.onclick = () => { recurrence="unica"; recU.classList.add("active"); recS.classList.remove("active"); daysWrap.classList.add("hidden"); checkValid(); };
+  recS.onclick = () => { recurrence="semanal"; recS.classList.add("active"); recU.classList.remove("active"); daysWrap.classList.remove("hidden"); checkValid(); };
+  root.querySelectorAll(".note-day").forEach(b => b.onclick = () => {
+    const v = parseInt(b.dataset.day);
+    if (daysOfWeek.includes(v)) { daysOfWeek = daysOfWeek.filter(x=>x!==v); b.style.background=""; b.textContent = DIAS_CORTO.find(d=>d.v===v).l; }
+    else { daysOfWeek = [...daysOfWeek, v].sort(); b.style.background="var(--brass-soft)"; b.textContent = "✓ " + DIAS_CORTO.find(d=>d.v===v).l; }
+    checkValid();
+  });
+  saveBtn.onclick = () => onSave({ text: textI.value.trim(), recurrence, daysOfWeek: recurrence==="semanal"?daysOfWeek:[], time: root.querySelector("#note-time").value || null });
+}
+
+/* ---------- barra de seleccion multiple ---------- */
+function renderSelectionBar(pendingList) {
+  const bar = document.getElementById("selection-bar-root");
+  if (bar) bar.remove();
+  if (!selectionMode) return;
+  const div = document.createElement("div");
+  div.id = "selection-bar-root";
+  div.className = "fixed";
+  div.style.cssText = "position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;";
+  div.innerHTML = `<div style="max-width:480px;width:100%;background:#fff;border-top:1px solid #D8CFB8;padding:10px 14px 14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-size:13px;font-weight:700;">${selectedIds.length} seleccionada${selectedIds.length===1?"":"s"}</span>
+        <button id="sel-cancel" style="font-size:12px;color:var(--ink-soft);">✕ Cancelar</button>
+      </div>
+      ${user.role==="jefe" ? `<div style="display:flex;gap:8px;margin-bottom:8px;">
+        <button id="sel-req-open" style="flex:1;padding:8px;border-radius:6px;background:var(--green-soft);font-size:12px;font-weight:600;">Pedir apertura</button>
+        <button id="sel-req-closed" style="flex:1;padding:8px;border-radius:6px;background:var(--red-soft);font-size:12px;font-weight:600;">Pedir cierre</button>
+      </div>` : ""}
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px;color:var(--ink-soft);">
+        <input type="checkbox" id="sel-clean" /> Quedaron cerradas y limpias (limpieza no las necesita revisar)
+      </label>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <button id="sel-mark-open" style="flex:1;padding:8px;border-radius:6px;background:var(--green);color:#fff;font-size:12px;font-weight:700;">Marcar abiertas</button>
+        <button id="sel-mark-closed" style="flex:1;padding:8px;border-radius:6px;background:var(--red);color:#fff;font-size:12px;font-weight:700;">Marcar cerradas</button>
+      </div>
+      <button id="sel-add-note" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--brass);font-size:12px;font-weight:600;">📝 Agregar nota para estas aulas</button>
+    </div>`;
+  document.body.appendChild(div);
+  document.getElementById("sel-cancel").onclick = clearSelection;
+  document.getElementById("sel-mark-open").onclick = () => { const doorsArr = selectedIds.map(id=>data.doors[id]); if (confirmIfMismatch(doorsArr, "open")) bulkMark("open"); };
+  document.getElementById("sel-mark-closed").onclick = () => { const doorsArr = selectedIds.map(id=>data.doors[id]); if (confirmIfMismatch(doorsArr, "closed")) bulkMark("closed", document.getElementById("sel-clean").checked); };
+  const ro = document.getElementById("sel-req-open"), rc = document.getElementById("sel-req-closed");
+  if (ro) ro.onclick = () => { const doorsArr = selectedIds.map(id=>data.doors[id]); if (confirmIfAlreadyInState(doorsArr, "open")) bulkRequest("open"); };
+  if (rc) rc.onclick = () => { const doorsArr = selectedIds.map(id=>data.doors[id]); if (confirmIfAlreadyInState(doorsArr, "closed")) bulkRequest("closed"); };
+  document.getElementById("sel-add-note").onclick = () => { noteDraftIds = [...selectedIds]; renderNoteSheet(); };
+}
+
+let allNotesDayFilter = "todos"; // "todos" | 0-6
+function renderAllNotesSheet() {
+  const root = document.getElementById("detail-root");
+  const notes = [...(data.notes||[])].sort((a,b)=>b.createdAt-a.createdAt);
+  const shown = allNotesDayFilter === "todos" ? notes : notes.filter(n => n.recurrence === "semanal" && (n.daysOfWeek||[]).includes(allNotesDayFilter));
+  const dayChips = [{v:"todos",l:"Todos"}, ...DIAS_CORTO].map(d => `<button class="chip all-notes-day ${allNotesDayFilter===d.v?"active":""}" data-day="${d.v}">${d.l}</button>`).join("");
+
+  root.innerHTML = `<div class="sheet" id="all-notes-bg"><div class="sheet-inner">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h2 class="display" style="font-size:20px;font-weight:700;margin:0;">Todas las notas</h2>
+      <button id="all-notes-close" style="font-size:20px;">✕</button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">${dayChips}</div>
+    ${!shown.length ? `<p style="font-size:13px;color:var(--ink-soft);">No hay notas para este filtro.</p>` : ""}
+    ${shown.map(n => `<div class="card" style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;gap:8px;">
+          <p style="font-size:13px;font-weight:600;margin:0;">${esc(n.text)}</p>
+          <button data-del-note-all="${n.id}" style="color:var(--red);font-size:11px;font-weight:600;white-space:nowrap;">Eliminar</button>
+        </div>
+        ${n.doorIds && n.doorIds.length ? `<p style="font-size:11px;color:var(--brass);font-weight:600;margin:2px 0 0;">Aulas: ${n.doorIds.map(id=>data.doors[id]?.label||id).join(", ")}</p>` : ""}
+        <p style="font-size:11px;color:var(--ink-soft);margin:2px 0 0;">${n.recurrence==="semanal"?`Todos los ${(n.daysOfWeek||[]).map(v=>DIAS[v]).join(", ")}`:"Una vez"}${n.time?` · ${n.time} hs`:""} · cargó ${esc(n.createdBy)}</p>
+      </div>`).join("")}
+  </div></div>`;
+  const close = () => { root.innerHTML = ""; };
+  document.getElementById("all-notes-close").onclick = close;
+  document.getElementById("all-notes-bg").onclick = (e) => { if (e.target.id==="all-notes-bg") close(); };
+  root.querySelectorAll(".all-notes-day").forEach(b => b.onclick = () => { allNotesDayFilter = b.dataset.day==="todos" ? "todos" : parseInt(b.dataset.day); renderAllNotesSheet(); });
+  root.querySelectorAll("[data-del-note-all]").forEach(b => b.onclick = () => { if (confirm("¿Eliminar esta nota para siempre?")) { deleteNote(b.dataset.delNoteAll); renderAllNotesSheet(); } });
+}
+
+function renderNoteSheet() {
+  if (!noteDraftIds) return;
+  const root = document.getElementById("detail-root");
+  const labels = noteDraftIds.map(id => data.doors[id]?.label).filter(Boolean);
+  root.innerHTML = `<div class="sheet" id="note-sheet-bg"><div class="sheet-inner">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h2 class="display" style="font-size:20px;font-weight:700;margin:0;">Nueva nota</h2>
+        <button id="note-sheet-close" style="font-size:20px;">✕</button>
+      </div>
+      ${noteFormHTML(labels)}
+    </div></div>`;
+  document.getElementById("note-sheet-close").onclick = () => { noteDraftIds = null; root.innerHTML = ""; render(); };
+  document.getElementById("note-sheet-bg").onclick = (e) => { if (e.target.id==="note-sheet-bg") { noteDraftIds=null; root.innerHTML=""; render(); } };
+  bindNoteForm(root, (note) => { addNote({ ...note, doorIds: noteDraftIds }); noteDraftIds = null; root.innerHTML = ""; clearSelection(); });
+}
+
+/* ---------- ficha de personal ---------- */
+function openStaffSheet(name) {
+  const existing = name ? data.staff[name] : null;
+  const root = document.getElementById("detail-root");
+  let role = existing ? existing.role : "recorrido";
+  let zones = existing ? [...(existing.zones||[])] : [];
+  let turno = existing ? (existing.turno || null) : null;
+  root.innerHTML = `<div class="sheet" id="staff-sheet-bg"><div class="sheet-inner">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h2 class="display" style="font-size:20px;font-weight:700;margin:0;">${name?esc(name):"Nueva persona"}</h2>
+        <button id="staff-close" style="font-size:20px;">✕</button>
+      </div>
+      ${!name ? `<label class="mono" style="font-size:11px;color:var(--ink-soft);">NOMBRE Y APELLIDO</label>
+        <input id="staff-name" placeholder="Ej: Marcelo Gómez" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:11px 12px;font-size:14px;margin:6px 0 16px;" />
+        <p style="font-size:11px;color:var(--ink-soft);margin:-10px 0 16px;">Esta persona va a elegir su propio PIN la primera vez que entre.</p>` : ""}
+      <label class="mono" style="font-size:11px;color:var(--ink-soft);">ROL</label>
+      <div style="display:flex;gap:8px;margin:8px 0 16px;">
+        <button id="staff-role-recorrido" class="chip ${role==='recorrido'?'active':''}" style="flex:1;">🚶 Pisos</button>
+        <button id="staff-role-jefe" class="chip ${role==='jefe'?'active':''}" style="flex:1;">👔 Oficina Seguridad</button>
+      </div>
+      <label class="mono" style="font-size:11px;color:var(--ink-soft);">TURNO</label>
+      <div style="display:flex;gap:8px;margin:8px 0 16px;">
+        <button data-turno="manana" class="chip staff-turno ${turno==='manana'?'active':''}" style="flex:1;">☀️ Mañana</button>
+        <button data-turno="tarde" class="chip staff-turno ${turno==='tarde'?'active':''}" style="flex:1;">🌤️ Tarde</button>
+        <button data-turno="noche" class="chip staff-turno ${turno==='noche'?'active':''}" style="flex:1;">🌙 Noche</button>
+      </div>
+      <label class="mono" style="font-size:11px;color:var(--ink-soft);">PISOS ASIGNADOS (podés elegir más de uno)</label>
+      <div id="staff-zones" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 20px;">
+        ${ZONES.map(z=>`<button class="chip staff-zone ${zones.includes(z.id)?'active':''}" data-zone="${z.id}">${zones.includes(z.id)?'✓ ':''}${z.label}</button>`).join("")}
+      </div>
+      ${name ? `<button id="staff-reset-pin" style="width:100%;margin-bottom:12px;padding:12px;border-radius:8px;color:var(--ink);font-weight:600;font-size:13px;border:1px solid var(--brass);">🔑 Blanquear PIN (se lo olvidó)</button>` : ""}
+      <button id="staff-save" class="btn-primary" ${name?'':'disabled'}>${name?"Guardar cambios":"Crear persona"}</button>
+      ${name?`<button id="staff-delete" style="width:100%;margin-top:10px;padding:12px;border-radius:8px;color:var(--red);font-weight:600;font-size:13px;border:1px solid var(--red-soft);">Eliminar persona</button>`:""}
+    </div></div>`;
+  const close = () => { root.innerHTML = ""; };
+  document.getElementById("staff-close").onclick = close;
+  document.getElementById("staff-sheet-bg").onclick = (e) => { if (e.target.id==="staff-sheet-bg") close(); };
+  const rRec = document.getElementById("staff-role-recorrido"), rJefe = document.getElementById("staff-role-jefe");
+  rRec.onclick = () => { role="recorrido"; rRec.classList.add("active"); rJefe.classList.remove("active"); };
+  rJefe.onclick = () => { role="jefe"; rJefe.classList.add("active"); rRec.classList.remove("active"); };
+  root.querySelectorAll(".staff-turno").forEach(b => b.onclick = () => { turno = b.dataset.turno; root.querySelectorAll(".staff-turno").forEach(x=>x.classList.remove("active")); b.classList.add("active"); });
+  root.querySelectorAll(".staff-zone").forEach(b => b.onclick = () => {
+    const z = b.dataset.zone;
+    zones = zones.includes(z) ? zones.filter(x=>x!==z) : [...zones, z];
+    root.querySelectorAll(".staff-zone").forEach(x => { const zz = ZONES.find(zo=>zo.id===x.dataset.zone); x.classList.toggle("active", zones.includes(x.dataset.zone)); x.textContent = (zones.includes(x.dataset.zone)?'✓ ':'') + zz.label; });
+  });
+  const resetPinBtn = document.getElementById("staff-reset-pin");
+  if (resetPinBtn) resetPinBtn.onclick = () => { if (confirm(`¿Blanquear el PIN de ${name}? La próxima vez que entre va a tener que elegir uno nuevo.`)) { saveStaff(name, { pin: null }); close(); } };
+  const saveBtn = document.getElementById("staff-save");
+  const nameI = document.getElementById("staff-name");
+  if (nameI) nameI.oninput = () => saveBtn.disabled = !nameI.value.trim();
+  saveBtn.onclick = () => {
+    const id = name || nameI.value.trim();
+    if (!name && data.staff[id]) { alert("Ya existe una persona con ese nombre."); return; }
+    saveStaff(id, name ? { role, zones, turno } : { role, zones, turno, pin: null });
+    close();
+  };
+  const delBtn = document.getElementById("staff-delete");
+  if (delBtn) delBtn.onclick = () => { if (confirm(`¿Eliminar a ${name}?`)) { deleteStaff(name); close(); } };
+}
+
+function openCatedraSheet(name) {
+  const existing = (data.catedras||[]).find(c => catedraName(c) === name);
+  let turno = existing ? catedraTurno(existing) : null;
+  let dias = existing ? [...catedraDias(existing)] : [];
+  const root = document.getElementById("detail-root");
+  root.innerHTML = `<div class="sheet" id="cat-sheet-bg"><div class="sheet-inner">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h2 class="display" style="font-size:20px;font-weight:700;margin:0;">Editar cátedra</h2>
+        <button id="cat-close" style="font-size:20px;">✕</button>
+      </div>
+      <label class="mono" style="font-size:11px;color:var(--ink-soft);">NOMBRE</label>
+      <input id="cat-name" value="${esc(name)}" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:11px 12px;font-size:14px;margin:6px 0 6px;" />
+      <p id="cat-error" class="hidden" style="font-size:11px;color:var(--red);margin-bottom:10px;">Ya existe una cátedra con ese nombre.</p>
+      <p style="font-size:11px;color:var(--ink-soft);margin-bottom:16px;">Los pedidos y el historial que ya usaron "${esc(name)}" se actualizan solos al nombre nuevo.</p>
+      <label class="mono" style="font-size:11px;color:var(--ink-soft);">TURNO</label>
+      <div style="display:flex;gap:6px;margin:8px 0 16px;">
+        <button data-cat-turno="manana" class="chip cat-turno ${turno==='manana'?'active':''}" style="flex:1;font-size:12px;">☀️ Mañana</button>
+        <button data-cat-turno="tarde" class="chip cat-turno ${turno==='tarde'?'active':''}" style="flex:1;font-size:12px;">🌤️ Tarde</button>
+        <button data-cat-turno="noche" class="chip cat-turno ${turno==='noche'?'active':''}" style="flex:1;font-size:12px;">🌙 Noche</button>
+      </div>
+      <label class="mono" style="font-size:11px;color:var(--ink-soft);">DÍAS</label>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 20px;">
+        ${["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map((l,i)=>`<button data-cat-day="${i}" class="chip cat-day ${dias.includes(i)?'active':''}" style="font-size:11px;padding:5px 9px;">${l}</button>`).join("")}
+      </div>
+      <p style="font-size:11px;color:var(--ink-soft);margin-bottom:16px;">Si dejás turno o días sin marcar, esta cátedra va a aparecer siempre, sin filtrar.</p>
+      <button id="cat-save" class="btn-primary">Guardar cambios</button>
+      <button id="cat-delete" style="width:100%;margin-top:10px;padding:12px;border-radius:8px;color:var(--red);font-weight:600;font-size:13px;border:1px solid var(--red-soft);">Eliminar cátedra</button>
+    </div></div>`;
+  const close = () => { root.innerHTML = ""; };
+  document.getElementById("cat-close").onclick = close;
+  document.getElementById("cat-sheet-bg").onclick = (e) => { if (e.target.id==="cat-sheet-bg") close(); };
+  root.querySelectorAll(".cat-turno").forEach(b => b.onclick = () => { turno = turno===b.dataset.catTurno ? null : b.dataset.catTurno; root.querySelectorAll(".cat-turno").forEach(x=>x.classList.toggle("active", x.dataset.catTurno===turno)); });
+  root.querySelectorAll(".cat-day").forEach(b => b.onclick = () => {
+    const d = parseInt(b.dataset.catDay);
+    dias = dias.includes(d) ? dias.filter(x=>x!==d) : [...dias, d].sort();
+    b.classList.toggle("active", dias.includes(d));
+  });
+  document.getElementById("cat-save").onclick = () => {
+    const val = document.getElementById("cat-name").value.trim();
+    if (!val) return;
+    if (val !== name && (data.catedras||[]).some(c => catedraName(c) === val)) { document.getElementById("cat-error").classList.remove("hidden"); return; }
+    renameCatedra(name, { name: val, turno, dias });
+    close();
+  };
+  document.getElementById("cat-delete").onclick = () => { if (confirm(`¿Eliminar la cátedra ${name}?`)) { removeCatedra(name); close(); } };
+}
+
+/* ---------- detalle de puerta ---------- */
+let selectedCatedra = null, markCleanChecked = false;
+function renderDoorDetail() {
+  const root = document.getElementById("detail-root");
+  if (document.getElementById("all-notes-bg")) return;
+  if (!selectedDoorId || !data.doors[selectedDoorId]) { if (!noteDraftIds) root.innerHTML = ""; return; }
+  const d = data.doors[selectedDoorId];
+  const pr = d.pendingRequest;
+  const delayed = pr && (now()-pr.requestedAt>DELAY_MS);
+  const doorHist = data.history.filter(h=>h.doorId===d.id).sort((a,b)=>b.executedAt-a.executedAt).slice(0,5);
+  const doorNotes = (data.notes||[]).filter(n => n.doorIds && n.doorIds.includes(d.id));
+  const catedras = catedrasForToday();
+  const totalCatedras = (data.catedras||[]).length;
+
+  root.innerHTML = `<div class="sheet" id="sheet-bg"><div class="sheet-inner">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h2 class="display" style="font-size:20px;font-weight:700;margin:0;">${esc(d.label)}</h2>
+      <button id="sheet-close" style="font-size:20px;">✕</button>
+    </div>
+    <p style="margin:0 0 4px;font-weight:600;">Estado actual: ${d.status==="open"?"Abierta 🟢":"Cerrada 🔴"}</p>
+    <p style="font-size:13px;color:var(--ink-soft);margin:0 0 16px;">🔑 ${d.keyHolder?`Llave en poder de ${esc(d.keyHolder)}`:"Llave sin registrar"} · ${esc(d.sectorLabel)}</p>
+    ${d.hasTV ? `<div class="card" style="margin-bottom:16px;background:#F1ECDD;"><p style="font-size:12px;margin:0;">📺 Tiene TV — extremar el cuidado al cerrar.</p></div>` : ""}
+    ${d.status==="closed" && d.clean ? `<div class="card" style="margin-bottom:16px;background:var(--green-soft);"><p style="font-size:12px;margin:0;">✅ Quedó cerrada y limpia — limpieza no necesita revisarla.</p></div>` : ""}
+    ${pr ? `<div class="card" style="margin-bottom:16px;background:${pr.type==="open"?"var(--green-soft)":"var(--red-soft)"};">
+        <p style="font-weight:700;font-size:13px;margin:0 0 4px;">${delayed?"⚠️ ":"🔔 "}Piden ${pr.type==="open"?"ABRIR":"CERRAR"} ${delayed?"· demorada":""}</p>
+        <p style="font-size:12px;color:var(--ink-soft);margin:0;">Lo pidió ${esc(pr.requestedBy)} · ${elapsed(pr.requestedAt)}${pr.catedra?` · Cátedra ${esc(pr.catedra)}`:""}</p>
+      </div>` : ""}
+    ${user.role==="jefe" ? `
+      <p class="mono" style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">PEDIR AL PERSONAL DEL PISO</p>
+      <p style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">Cátedra (opcional)</p>
+      ${catedras.length ? `<div id="det-catedras" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">${catedras.map(c=>`<button class="chip det-cat" data-cat="${esc(catedraName(c))}">${esc(catedraName(c))}</button>`).join("")}</div>` : ""}
+      ${totalCatedras > catedras.length ? `<p style="font-size:10px;color:var(--ink-soft);margin:0 0 6px;">Hay ${totalCatedras - catedras.length} cátedra(s) más cargadas para otro turno/día — si es una de esas, escribila de nuevo abajo.</p>` : ""}
+      <div style="display:flex;gap:6px;margin-bottom:4px;">
+        <input id="new-cat-inline" placeholder="¿No está en la lista? Escribila acá" style="flex:1;border:1px solid #D8CFB8;border-radius:6px;padding:7px 10px;font-size:12px;" />
+        <button id="new-cat-inline-btn" style="background:var(--ink);color:#F7F4EC;padding:0 12px;border-radius:6px;font-size:12px;font-weight:600;">+</button>
+      </div>
+      <p id="cat-selected-label" style="font-size:11px;color:var(--brass);font-weight:600;margin:4px 0 8px;"></p>
+      <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <button id="det-req-open" ${pr?.type==="open"?"disabled":""} style="flex:1;padding:8px;border-radius:6px;background:var(--green-soft);font-size:13px;font-weight:600;opacity:${pr?.type==="open"?0.5:1};">🚪 Pedir apertura</button>
+        <button id="det-req-closed" ${pr?.type==="closed"?"disabled":""} style="flex:1;padding:8px;border-radius:6px;background:var(--red-soft);font-size:13px;font-weight:600;opacity:${pr?.type==="closed"?0.5:1};">🚪 Pedir cierre</button>
+      </div>` : ""}
+    <p class="mono" style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">YA LO HICE CON LA LLAVE — MARCAR</p>
+    <p style="font-size:11px;color:var(--ink-soft);margin-bottom:8px;">Usalo también si te lo pidieron por handy, sin pasar por una solicitud del sistema.</p>
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px;color:var(--ink-soft);">
+      <input type="checkbox" id="det-clean" /> Quedó cerrada y limpia (limpieza no la necesita revisar)
+    </label>
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button id="det-mark-open" style="flex:1;padding:13px;border-radius:6px;background:var(--green);color:#fff;font-weight:700;font-size:14px;">✓ Abierta</button>
+      <button id="det-mark-closed" style="flex:1;padding:13px;border-radius:6px;background:var(--red);color:#fff;font-weight:700;font-size:14px;">✓ Cerrada</button>
+    </div>
+    ${doorNotes.length ? `<p class="mono" style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">NOTAS DE ESTA AULA</p>` +
+      doorNotes.map(n=>`<div class="card" style="margin-bottom:6px;background:var(--brass-soft);"><p style="font-size:12px;font-weight:600;margin:0;">${esc(n.text)}</p><p style="font-size:10px;color:var(--ink-soft);margin:2px 0 0;">${n.recurrence==="semanal"?"Todas las semanas":"Una vez"}${n.time?` · ${n.time} hs`:""}</p></div>`).join("") : ""}
+    <p class="mono" style="font-size:11px;color:var(--ink-soft);margin:16px 0 6px;">ANOMALÍAS</p>
+    ${(d.anomalies||[]).filter(a=>!a.resolved).map(a=>`<div style="display:flex;justify-content:space-between;gap:8px;background:var(--red-soft);border-radius:6px;padding:8px;margin-bottom:6px;">
+        <div><p style="font-size:12px;font-weight:600;margin:0;">${esc(a.text)}</p><p style="font-size:10px;color:var(--ink-soft);margin:0;">${esc(a.reportedBy)} · ${elapsed(a.reportedAt)}</p></div>
+        <button data-resolve="${a.id}" style="font-size:10px;font-weight:600;color:var(--green);white-space:nowrap;">✓ Resuelta</button>
+      </div>`).join("")}
+    <div style="display:flex;gap:6px;margin-bottom:16px;">
+      <input id="anomaly-text" placeholder="Ej: se quemaron 3 lamparitas" style="flex:1;border:1px solid #D8CFB8;border-radius:6px;padding:7px 10px;font-size:12px;" />
+      <button id="anomaly-btn" style="background:var(--ink);color:#F7F4EC;padding:0 12px;border-radius:6px;font-size:12px;font-weight:600;">Reportar</button>
+    </div>
+    ${doorHist.length ? `<p class="mono" style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">ÚLTIMOS MOVIMIENTOS</p>` +
+      doorHist.map(h=>`<div style="font-size:12px;border-top:1px solid #E4DECB;padding:6px 0;"><span style="font-weight:600;">${h.action==="open"?"Abierta":"Cerrada"}</span><span class="mono" style="color:var(--ink-soft);"> · ${fmtTime(h.executedAt)}</span><div style="color:var(--ink-soft);">${h.requestedBy?`pidió ${esc(h.requestedBy)}${h.catedra?` (Cátedra ${esc(h.catedra)})`:""} · `:"sin solicitud (handy) · "}ejecutó ${esc(h.executedBy)}</div></div>`).join("") : ""}
+  </div></div>`;
+
+  const close = () => { selectedDoorId = null; selectedCatedra = null; markCleanChecked = false; render(); };
+  document.getElementById("sheet-close").onclick = close;
+  document.getElementById("sheet-bg").onclick = (e) => { if (e.target.id==="sheet-bg") close(); };
+  document.getElementById("det-mark-open").onclick = () => { if (confirmIfMismatch([d], "open")) markDoor(d.id, "open"); };
+  document.getElementById("det-mark-closed").onclick = () => { if (confirmIfMismatch([d], "closed")) markDoor(d.id, "closed", document.getElementById("det-clean").checked); };
+  const ro = document.getElementById("det-req-open"), rc = document.getElementById("det-req-closed");
+  if (ro) ro.onclick = () => { if (confirmIfAlreadyInState([d], "open")) requestChange(d.id, "open", selectedCatedra); };
+  if (rc) rc.onclick = () => { if (confirmIfAlreadyInState([d], "closed")) requestChange(d.id, "closed", selectedCatedra); };
+  root.querySelectorAll(".det-cat").forEach(b => b.onclick = () => {
+    selectedCatedra = selectedCatedra===b.dataset.cat ? null : b.dataset.cat;
+    root.querySelectorAll(".det-cat").forEach(x=>x.classList.toggle("active", x.dataset.cat===selectedCatedra));
+    document.getElementById("cat-selected-label").textContent = selectedCatedra ? `Seleccionada: ${selectedCatedra}` : "";
+  });
+  const newCatI = document.getElementById("new-cat-inline"), newCatBtn = document.getElementById("new-cat-inline-btn");
+  if (newCatBtn) newCatBtn.onclick = () => {
+    const v = newCatI.value.trim(); if (!v) return;
+    if (!(data.catedras||[]).some(c => catedraName(c) === v)) addCatedra({ name: v, turno: user.turno || null, dias: [new Date().getDay()] });
+    selectedCatedra = v; newCatI.value = "";
+    document.getElementById("cat-selected-label").textContent = `Seleccionada: ${v}`;
+  };
+  const anI = document.getElementById("anomaly-text"), anBtn = document.getElementById("anomaly-btn");
+  anBtn.onclick = () => { if (anI.value.trim()) { reportAnomaly(d.id, anI.value.trim()); anI.value = ""; } };
+  root.querySelectorAll("[data-resolve]").forEach(b => b.onclick = () => resolveAnomaly(d.id, b.dataset.resolve));
+}
+
+if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{}));
+</script>
+</body>
+</html>

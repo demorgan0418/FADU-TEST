@@ -1,0 +1,14 @@
+{
+  "name": "Control Seguridad FADU",
+  "short_name": "Seguridad FADU",
+  "description": "Control de aulas y depósitos del colegio",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#EDE8DD",
+  "theme_color": "#22303C",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

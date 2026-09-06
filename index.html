@@ -80,8 +80,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/fireba
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
-/* ======= PEGÁ ACÁ TU CONFIG DE FIREBASE (Configuración del proyecto > Tus apps) ======= */
-const firebaseConfig = {
+/* ======= PEGÁ ACÁ TU CONFIG DE FIREBASE (Configuración del proyecto > Tus apps) ======= */const firebaseConfig = {
+  const firebaseConfig = {
   apiKey: "AIzaSyCkreUsZYOpAOw8pitoQ18wC85FVjpTZnw",
   authDomain: "fadu-test.firebaseapp.com",
   projectId: "fadu-test",
@@ -105,7 +105,7 @@ const ZONES = [
 ];
 const DELAY_MS = 15 * 60 * 1000;
 
-const APP_VERSION = "1.11.1";
+const APP_VERSION = "1.13.0";
 const VERSION_HISTORY = [
   { version: "1.6.0", changes: [
     "Arreglado un error que dejaba de guardar cambios después de contradecir una solicitud (afectaba solo a esas aulas puntuales).",
@@ -146,6 +146,13 @@ const VERSION_HISTORY = [
     "Personal: se pueden asignar 2 o más turnos a una misma persona, para quien cubre parte de dos turnos.",
     "Nuevo sector Subsuelo: Aula Magna + aulas 1, 2, 3 y 4.",
     "El aviso de novedades al entrar ahora solo muestra la última versión. El número de versión en el login se puede tocar para ver el historial completo cuando quieras.",
+  ]},
+  { version: "1.13.0", changes: [
+    "El texto de las anomalías reportadas ahora se ve en rojo, para que se distinga mejor en cualquier pantalla.",
+    "Se puede ver de un vistazo si un sector tiene alguna anomalía sin resolver, sin tener que entrar aula por aula.",
+    "Subsuelo: las aulas ahora se numeran 01, 02, 03 y 04.",
+    "Arreglado: algunas cátedras cargadas anteriormente no reaccionaban al tocarlas en Personal.",
+    "Ahora, si al pedir apertura/cierre una cátedra no está cargada, se puede cargar en el momento — pero no queda guardada de forma permanente, porque se considera algo puntual.",
   ]},
 ];
 // se mantiene por compatibilidad con el resto del código, siempre apunta a la version mas nueva
@@ -228,7 +235,7 @@ function buildInitialDoors() {
   };
   // Subsuelo: Aula Magna + aulas 1 a 4
   add("SS-MAGNA", "Aula Magna", "SS", "Subsuelo", "aula", true);
-  for (let n = 1; n <= 4; n++) add(`SS${n}`, String(n), "SS", "Subsuelo", "aula", true);
+  for (let n = 1; n <= 4; n++) add(`SS${n}`, String(n).padStart(2,"0"), "SS", "Subsuelo", "aula", true);
   const TV_100 = ["106","107","109","115","118"];
   for (let n = 101; n <= 124; n++) {
     add(String(n), String(n), "100", "Sector 100", "aula", true, TV_100.includes(String(n)));
@@ -305,6 +312,19 @@ function reconcileDoors(storedDoors) {
 
 // Corrige cualquier dato que haya quedado con una forma rara (ej: algo que debería ser una lista y no lo es).
 // Si detecta algo raro, lo arregla localmente y avisa para que boot() lo vuelva a guardar ya reparado.
+// las catedras cargadas antes de la version 1.10.0 no tenian "id" propio -> tocarlas no hacia nada
+// (la busqueda por id fallaba en silencio). Esto les asigna uno estable la primera vez que se detectan.
+function ensureCatedraIds(list) {
+  let changed = false;
+  const result = (list || []).map(c => {
+    if (typeof c === "string") return c; // las de solo texto usan su propio texto como id, no necesitan nada mas
+    if (c && c.id) return c;
+    changed = true;
+    return { ...c, id: `cat-legacy-${now()}-${Math.random().toString(36).slice(2,6)}` };
+  });
+  return { result, changed };
+}
+
 function sanitizeState(raw) {
   let repaired = false;
   let doors = (raw.doors && typeof raw.doors === "object" && !Array.isArray(raw.doors)) ? { ...raw.doors } : {};
@@ -348,8 +368,9 @@ async function boot() {
   } else {
     const raw = snap.data();
     const { sane, repaired } = sanitizeState(raw);
-    needsRepair = repaired;
-    data = { doors: reconcileDoors(sane.doors), staff: sane.staff, history: sane.history, catedras: sane.catedras, notes: sane.notes };
+    const { result: catedras, changed: catChanged } = ensureCatedraIds(sane.catedras);
+    needsRepair = repaired || catChanged;
+    data = { doors: reconcileDoors(sane.doors), staff: sane.staff, history: sane.history, catedras, notes: sane.notes };
   }
   loaded = true;
   if (needsRepair) {
@@ -362,9 +383,10 @@ async function boot() {
     if (!snap.exists()) return;
     const raw = snap.data();
     const { sane, repaired } = sanitizeState(raw);
-    data = { doors: reconcileDoors(sane.doors), staff: sane.staff, history: sane.history, catedras: sane.catedras, notes: sane.notes };
+    const { result: catedras, changed: catChanged } = ensureCatedraIds(sane.catedras);
+    data = { doors: reconcileDoors(sane.doors), staff: sane.staff, history: sane.history, catedras, notes: sane.notes };
     render();
-    if (repaired) { try { setDoc(STATE_DOC, JSON.parse(JSON.stringify(data))); } catch (e) {} }
+    if (repaired || catChanged) { try { setDoc(STATE_DOC, JSON.parse(JSON.stringify(data))); } catch (e) {} }
   });
 }
 
@@ -527,14 +549,14 @@ function renderLogin() {
 }
 
 function loginAs(name, s) {
-  user = { name, role: s.role, zones: s.zones || [], turnos: staffTurnos(s) };
+  user = { name, role: s.role, zones: s.zones || [], turnos: staffTurnos(s), permisosExtra: s.permisosExtra || [] };
   saveSession(name);
   if (typeof Notification !== "undefined" && Notification.permission === "default") { try { Notification.requestPermission(); } catch(e){} }
   startNoteChecker();
   document.getElementById("view-login").classList.add("hidden");
   document.getElementById("view-app").classList.remove("hidden");
   document.getElementById("tabs-nav").classList.remove("hidden");
-  document.getElementById("tab-btn-personal").classList.toggle("hidden", user.role !== "jefe");
+  document.getElementById("tab-btn-personal").classList.toggle("hidden", user.role !== "jefe" && !isSuperuser(user));
   document.getElementById("user-sub").textContent = `${user.name} · ${user.role==="jefe"?"Oficina Seguridad":"Pisos"}`;
   render();
   checkVersionPopup();
@@ -600,7 +622,7 @@ function renameCatedra(id, fields) {
 }
 // una catedra vieja podia ser solo texto, o un objeto con "turno" (singular). Estas funciones
 // entienden los 3 formatos para no perder nada de lo ya cargado.
-function catedraId(c) { return typeof c === "string" ? c : c.id; }
+function catedraId(c) { return typeof c === "string" ? c : (c.id || catedraLabel(c)); }
 function catedraName(c) { return typeof c === "string" ? c : c.name; }
 function catedraMateria(c) { return typeof c === "string" ? null : (c.materia || null); }
 function catedraAula(c) { return typeof c === "string" ? null : (c.aula || null); }
@@ -652,6 +674,22 @@ function staffTurnos(s) {
   if (s.turno) return [s.turno]; // formato viejo (un solo turno)
   return [];
 }
+
+/* ---------- permisos ---------- */
+// "test" es la unica cuenta que puede otorgar o quitar permisos especiales a cualquiera, propios o ajenos.
+const SUPERUSER_NAME = "test";
+// lista de capacidades que se pueden otorgar. Se modelan como lista (permisosExtra: ["gestionCatedras"]),
+// no como campos sueltos, para poder sumar capacidades nuevas sin rediseñar nada.
+const CAPABILITIES = [
+  { id: "gestionCatedras", label: "Gestionar el catálogo general de cátedras (crear, editar, borrar para todos)" },
+];
+function isSuperuser(u) { return !!(u && u.name && u.name.toLowerCase() === SUPERUSER_NAME); }
+function hasPermission(u, cap) {
+  if (!u) return false;
+  if (isSuperuser(u)) return true; // el superusuario puede todo, sin necesidad de otorgarselo
+  return !!(u.permisosExtra && u.permisosExtra.includes(cap));
+}
+
 // las catedras sin turno/dia cargado siguen mostrandose siempre (compatibilidad con lo ya cargado).
 // las que sí tienen turno, solo se muestran si algún turno coincide con los de quien pide (o si quien
 // pide no tiene ningún turno cargado, en cuyo caso se muestran todas para no ocultar nada por error).
@@ -821,7 +859,7 @@ function render() {
   if (tab==="sectores") root.innerHTML = renderSectores(allDoors);
   if (tab==="solicitudes") root.innerHTML = renderSolicitudes(pendingList);
   if (tab==="historial") root.innerHTML = renderHistorial();
-  if (tab==="personal" && user.role==="jefe") root.innerHTML = renderPersonal();
+  if (tab==="personal" && (user.role==="jefe" || isSuperuser(user))) root.innerHTML = renderPersonal();
   bindTabHandlers(root);
   bindPlates(root);
 
@@ -893,7 +931,7 @@ function renderInicio(allDoors, pendingList) {
     if (!list.length) html += `<p style="font-size:13px;color:var(--ink-soft);">No hay ninguna en esta categoría.</p>`;
     html += list.map(d => `<button data-door="${d.id}" class="row-btn">
         <span style="font-size:13px;">${esc(d.label)} <span style="color:var(--ink-soft);">· ${esc(d.sectorLabel)}</span></span>
-        <span style="font-size:11px;color:var(--ink-soft);">${filterInicio==="anomalias" ? d.anomalies.filter(a=>!a.resolved).map(a=>esc(a.text)).join(", ") : d.pendingRequest ? `${d.pendingRequest.type==="open"?"piden abrir":"piden cerrar"}${d.pendingRequest.catedra?` · Cát. ${esc(d.pendingRequest.catedra)}`:""} · ${elapsed(d.pendingRequest.requestedAt)}` : (d.status==="open"?"abierta":"cerrada")}</span>
+        <span style="font-size:11px;color:${filterInicio==="anomalias" ? "var(--red)" : "var(--ink-soft)"};font-weight:${filterInicio==="anomalias"?600:400};">${filterInicio==="anomalias" ? d.anomalies.filter(a=>!a.resolved).map(a=>esc(a.text)).join(", ") : d.pendingRequest ? `${d.pendingRequest.type==="open"?"piden abrir":"piden cerrar"}${d.pendingRequest.catedra?` · Cát. ${esc(d.pendingRequest.catedra)}`:""} · ${elapsed(d.pendingRequest.requestedAt)}` : (d.status==="open"?"abierta":"cerrada")}</span>
       </button>`).join("");
   }
 
@@ -907,7 +945,8 @@ function renderInicio(allDoors, pendingList) {
       myZones.forEach(zoneId => {
         const zoneLabel = ZONES.find(z=>z.id===zoneId)?.label;
         const doorsInZone = allDoors.filter(d=>d.sector===zoneId);
-        html += `<p class="mono" style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">${zoneLabel?.toUpperCase()}</p><div class="grid4" style="margin-bottom:20px;">${doorsInZone.map(plateHTML).join("")}</div>`;
+        const zoneAnomaly = doorsInZone.some(d => (d.anomalies||[]).some(a=>!a.resolved));
+        html += `<p class="mono" style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">${zoneLabel?.toUpperCase()}${zoneAnomaly?' ⚠️':''}</p><div class="grid4" style="margin-bottom:20px;">${doorsInZone.map(plateHTML).join("")}</div>`;
       });
     } else html += `<p style="font-size:13px;color:var(--ink-soft);margin-bottom:20px;">Todavía no tenés un piso asignado por la oficina de seguridad.</p>`;
   } else if (pendingList.length) {
@@ -920,13 +959,15 @@ function renderInicio(allDoors, pendingList) {
 /* ---------- Sectores ---------- */
 function renderSectores(allDoors) {
   const shown = allDoors.filter(d=>d.sector===activeSector && (!sectorStatusFilter || d.status===sectorStatusFilter));
+  const sectorHasAnomaly = (zoneId) => allDoors.some(d => d.sector===zoneId && (d.anomalies||[]).some(a=>!a.resolved));
   return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
-      ${ZONES.map(z=>`<button class="chip sector-pick ${activeSector===z.id?"active":""}" data-zone="${z.id}" style="font-size:11px;padding:6px 10px;">${z.label}</button>`).join("")}
+      ${ZONES.map(z=>`<button class="chip sector-pick ${activeSector===z.id?"active":""}" data-zone="${z.id}" style="font-size:11px;padding:6px 10px;">${z.label}${sectorHasAnomaly(z.id)?' ⚠️':''}</button>`).join("")}
     </div>
     <div style="display:flex;gap:8px;margin-bottom:12px;">
       <button id="filter-open-toggle" class="chip" style="${sectorStatusFilter==="open"?"border-color:var(--green);background:var(--green-soft);":""}">🚪 Solo abiertas ${sectorStatusFilter==="open"?`(${shown.length})`:""}</button>
       <button id="filter-closed-toggle" class="chip" style="${sectorStatusFilter==="closed"?"border-color:var(--red);background:var(--red-soft);":""}">🚪 Solo cerradas ${sectorStatusFilter==="closed"?`(${shown.length})`:""}</button>
     </div>
+    ${sectorHasAnomaly(activeSector) ? `<p style="font-size:11px;color:var(--red);font-weight:600;margin-bottom:10px;">⚠️ Hay al menos una anomalía sin resolver en este sector.</p>` : ""}
     <p style="font-size:11px;color:var(--ink-soft);margin-bottom:8px;">Mantené presionada un aula para seleccionar varias juntas.</p>
     ${!shown.length ? `<p style="font-size:13px;color:var(--ink-soft);">No hay ninguna en este sector con ese filtro.</p>` : ""}
     <div class="grid4">${shown.map(plateHTML).join("")}</div>
@@ -987,19 +1028,8 @@ function bindHistorialSearch(root) {
 function renderPersonal() {
   const names = Object.keys(data.staff);
   const catedras = data.catedras || [];
-  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
-      <p class="display" style="font-size:18px;font-weight:700;margin:0;">Personal</p>
-      <button id="add-staff-btn" style="background:var(--ink);color:#F7F4EC;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:600;">+ Agregar</button>
-    </div>
-    <p style="font-size:11px;color:var(--ink-soft);margin-bottom:12px;">Tocá a una persona para cambiarle los pisos o el rol.</p>
-    ${!names.length ? `<p style="font-size:13px;color:var(--ink-soft);">Todavía no hay nadie cargado.</p>` : names.map(n => `
-      <button class="row-btn" data-edit-staff="${esc(n)}">
-        <span style="font-size:14px;">${data.staff[n].role==="jefe"?"👔":"🚶"} ${esc(n)} ${staffTurnos(data.staff[n]).map(t=>({manana:"☀️",tarde:"🌤️",noche:"🌙"}[t])).join("")}</span>
-        <span style="font-size:12px;color:var(--ink-soft);">${(data.staff[n].zones||[]).length ? data.staff[n].zones.map(z=>ZONES.find(zz=>zz.id===z)?.label).join(", ") : "sin piso"}</span>
-      </button>`).join("")}
-    <div style="margin-top:32px;">
-      <p class="display" style="font-size:18px;font-weight:700;margin-bottom:6px;">Cátedras</p>
-      <p style="font-size:11px;color:var(--ink-soft);margin-bottom:10px;">Al pedir apertura/cierre se muestran solo las cátedras del turno y el día de quien pide. Tocá una para corregirla — los pedidos y el historial se actualizan solos.</p>
+  const canManageCatedras = hasPermission(user, "gestionCatedras");
+  const catedrasBlock = canManageCatedras ? `
       <div class="card" style="margin-bottom:14px;">
         <input id="new-catedra-input" placeholder="Ej: González" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px;" />
         <input id="new-catedra-materia" placeholder="Materia (opcional, ej: Cálculo)" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px;" />
@@ -1021,8 +1051,39 @@ function renderPersonal() {
         const turnoIcons = turnos.map(t=>({manana:"☀️",tarde:"🌤️",noche:"🌙"}[t])).join("");
         const diasTxt = dias.length ? dias.map(d=>["D","L","M","X","J","V","S"][d]).join("") : "";
         return `<button class="chip" data-edit-catedra="${esc(catedraId(c))}">✎ ${esc(catedraLabel(c))}${aula?` (aula ${esc(aulaLabel(aula))})`:""}${turnoIcons?` ${turnoIcons}`:""}${diasTxt?` ${diasTxt}`:""}</button>`;
-      }).join("")}</div>`}
-    </div>`;
+      }).join("")}</div>`}` : `
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:10px;">No tenés permiso para gestionar el catálogo general de cátedras. Podés cargar una cátedra puntual al pedir apertura/cierre — queda guardada solo en ese pedido.</p>
+      ${!catedras.length ? "" : `<div style="display:flex;flex-wrap:wrap;gap:8px;">${catedras.map(c=>`<span class="chip" style="opacity:.7;">${esc(catedraLabel(c))}</span>`).join("")}</div>`}`;
+
+  const permisosBlock = isSuperuser(user) ? `
+    <div style="margin-top:32px;">
+      <p class="display" style="font-size:18px;font-weight:700;margin-bottom:6px;">Permisos</p>
+      <p style="font-size:11px;color:var(--ink-soft);margin-bottom:10px;">Solo tu usuario puede otorgar o quitar permisos especiales, propios o ajenos.</p>
+      ${!names.length ? `<p style="font-size:13px;color:var(--ink-soft);">Todavía no hay nadie cargado.</p>` : names.map(n => `
+        <div class="card" style="margin-bottom:8px;">
+          <p style="font-size:13px;font-weight:600;margin:0 0 6px;">${esc(n)}</p>
+          ${CAPABILITIES.map(cap => `<label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:4px;">
+            <input type="checkbox" class="perm-toggle" data-staff="${esc(n)}" data-cap="${cap.id}" ${(data.staff[n].permisosExtra||[]).includes(cap.id)?"checked":""} /> ${esc(cap.label)}
+          </label>`).join("")}
+        </div>`).join("")}
+    </div>` : "";
+
+  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+      <p class="display" style="font-size:18px;font-weight:700;margin:0;">Personal</p>
+      <button id="add-staff-btn" style="background:var(--ink);color:#F7F4EC;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:600;">+ Agregar</button>
+    </div>
+    <p style="font-size:11px;color:var(--ink-soft);margin-bottom:12px;">Tocá a una persona para cambiarle los pisos o el rol.</p>
+    ${!names.length ? `<p style="font-size:13px;color:var(--ink-soft);">Todavía no hay nadie cargado.</p>` : names.map(n => `
+      <button class="row-btn" data-edit-staff="${esc(n)}">
+        <span style="font-size:14px;">${data.staff[n].role==="jefe"?"👔":"🚶"} ${esc(n)} ${staffTurnos(data.staff[n]).map(t=>({manana:"☀️",tarde:"🌤️",noche:"🌙"}[t])).join("")}</span>
+        <span style="font-size:12px;color:var(--ink-soft);">${(data.staff[n].zones||[]).length ? data.staff[n].zones.map(z=>ZONES.find(zz=>zz.id===z)?.label).join(", ") : "sin piso"}</span>
+      </button>`).join("")}
+    <div style="margin-top:32px;">
+      <p class="display" style="font-size:18px;font-weight:700;margin-bottom:6px;">Cátedras</p>
+      <p style="font-size:11px;color:var(--ink-soft);margin-bottom:10px;">Al pedir apertura/cierre se muestran solo las cátedras del turno y el día de quien pide. Tocá una para corregirla — los pedidos y el historial se actualizan solos.</p>
+      ${catedrasBlock}
+    </div>
+    ${permisosBlock}`;
 }
 
 /* ---------- handlers por pestaña ---------- */
@@ -1052,7 +1113,7 @@ function bindTabHandlers(root) {
     if (closedBtn) closedBtn.onclick = () => { sectorStatusFilter = sectorStatusFilter==="closed" ? null : "closed"; render(); };
   }
   if (tab==="historial") bindHistorialSearch(root);
-  if (tab==="personal" && user.role==="jefe") {
+  if (tab==="personal" && (user.role==="jefe" || isSuperuser(user))) {
     const addBtn = document.getElementById("add-staff-btn");
     if (addBtn) addBtn.onclick = () => openStaffSheet(null);
     root.querySelectorAll("[data-edit-staff]").forEach(b => b.onclick = () => openStaffSheet(b.dataset.editStaff));
@@ -1078,6 +1139,12 @@ function bindTabHandlers(root) {
         check();
       };
     }
+    root.querySelectorAll(".perm-toggle").forEach(cbx => cbx.onchange = () => {
+      const name = cbx.dataset.staff, cap = cbx.dataset.cap;
+      const current = (data.staff[name] && data.staff[name].permisosExtra) || [];
+      const next = cbx.checked ? [...new Set([...current, cap])] : current.filter(c => c !== cap);
+      saveStaff(name, { permisosExtra: next });
+    });
   }
 }
 
@@ -1354,6 +1421,7 @@ function renderDoorDetail() {
         <input id="new-cat-inline" placeholder="¿No está en la lista? Escribila acá" style="flex:1;border:1px solid #D8CFB8;border-radius:6px;padding:7px 10px;font-size:12px;" />
         <button id="new-cat-inline-btn" style="background:var(--ink);color:#F7F4EC;padding:0 12px;border-radius:6px;font-size:12px;font-weight:600;">+</button>
       </div>
+      ${!hasPermission(user,"gestionCatedras") ? `<p style="font-size:10px;color:var(--ink-soft);margin:2px 0 6px;">Esta cátedra queda guardada solo en este pedido, no se suma al catálogo general.</p>` : ""}
       <p id="cat-selected-label" style="font-size:11px;color:var(--brass);font-weight:600;margin:4px 0 8px;"></p>
       <div style="display:flex;gap:8px;margin-bottom:16px;">
         <button id="det-req-open" ${pr?.type==="open"?"disabled":""} style="flex:1;padding:8px;border-radius:6px;background:var(--green-soft);font-size:13px;font-weight:600;opacity:${pr?.type==="open"?0.5:1};">🚪 Pedir apertura</button>
@@ -1372,7 +1440,7 @@ function renderDoorDetail() {
       doorNotes.map(n=>`<div class="card" style="margin-bottom:6px;background:var(--brass-soft);"><p style="font-size:12px;font-weight:600;margin:0;">${esc(n.text)}</p><p style="font-size:10px;color:var(--ink-soft);margin:2px 0 0;">${n.recurrence==="semanal"?"Todas las semanas":"Una vez"}${n.time?` · ${n.time} hs`:""}</p></div>`).join("") : ""}
     <p class="mono" style="font-size:11px;color:var(--ink-soft);margin:16px 0 6px;">ANOMALÍAS</p>
     ${(d.anomalies||[]).filter(a=>!a.resolved).map(a=>`<div style="display:flex;justify-content:space-between;gap:8px;background:var(--red-soft);border-radius:6px;padding:8px;margin-bottom:6px;">
-        <div><p style="font-size:12px;font-weight:600;margin:0;">${esc(a.text)}</p><p style="font-size:10px;color:var(--ink-soft);margin:0;">${esc(a.reportedBy)} · ${elapsed(a.reportedAt)}</p></div>
+        <div><p style="font-size:12px;font-weight:700;color:var(--red);margin:0;">${esc(a.text)}</p><p style="font-size:10px;color:var(--ink-soft);margin:0;">${esc(a.reportedBy)} · ${elapsed(a.reportedAt)}</p></div>
         <button data-resolve="${a.id}" style="font-size:10px;font-weight:600;color:var(--green);white-space:nowrap;">✓ Resuelta</button>
       </div>`).join("")}
     <div style="display:flex;gap:6px;margin-bottom:16px;">
@@ -1399,7 +1467,10 @@ function renderDoorDetail() {
   const newCatI = document.getElementById("new-cat-inline"), newCatBtn = document.getElementById("new-cat-inline-btn");
   if (newCatBtn) newCatBtn.onclick = () => {
     const v = newCatI.value.trim(); if (!v) return;
-    if (!(data.catedras||[]).some(c => catedraLabel(c) === v)) addCatedra({ name: v, turnos: (user.turnos||[]), dias: [new Date().getDay()] });
+    if (hasPermission(user, "gestionCatedras")) {
+      if (!(data.catedras||[]).some(c => catedraLabel(c) === v)) addCatedra({ name: v, turnos: (user.turnos||[]), dias: [new Date().getDay()] });
+    }
+    // sin el permiso, la cátedra escrita acá no se suma al catálogo general — queda guardada únicamente en este pedido puntual.
     selectedCatedra = v; newCatI.value = "";
     document.getElementById("cat-selected-label").textContent = `Seleccionada: ${v}`;
   };

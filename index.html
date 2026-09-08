@@ -218,7 +218,15 @@ async function initPush(name) {
     onMessage(messaging, (payload) => {
       const title = (payload.notification && payload.notification.title) || "Control Seguridad FADU";
       const body = (payload.notification && payload.notification.body) || "";
-      notifyUser(title, body); // con la app abierta, reusa el mismo sonido/vibracion que ya tenemos
+      // ojo: acá NO usamos notifyUser() (que tiene nuestro beep casero) — para los avisos que vienen
+      // por push, dejamos que el sistema operativo del celular use su propio sonido de notificación,
+      // que se escucha bien fuerte y claro incluso con la pantalla apagada. El beep casero se sigue
+      // usando para los avisos mientras la app está realmente abierta y mirando la pantalla (ver
+      // checkPendingNotifications / startNoteChecker), ahí sí tiene sentido.
+      if (navigator.vibrate) navigator.vibrate([150, 80, 150, 80, 150]);
+      try {
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification(title, { body, icon: "icons/icon-192.png" });
+      } catch (e) {}
     });
   } catch (e) { /* sin push, pero la app sigue andando igual */ }
 }
@@ -1524,7 +1532,7 @@ function renderDoorDetail() {
   root.querySelectorAll("[data-resolve]").forEach(b => b.onclick = () => resolveAnomaly(d.id, b.dataset.resolve));
 }
 
-if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{}));
+if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("firebase-messaging-sw.js").catch(()=>{}));
 </script>
 </body>
 </html>

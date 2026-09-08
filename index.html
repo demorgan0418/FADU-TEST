@@ -79,10 +79,10 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging.js";
 
 /* ======= PEGÁ ACÁ TU CONFIG DE FIREBASE (Configuración del proyecto > Tus apps) ======= */
-  const firebaseConfig = {
-
+const firebaseConfig = {
   apiKey: "AIzaSyCkreUsZYOpAOw8pitoQ18wC85FVjpTZnw",
   authDomain: "fadu-test.firebaseapp.com",
   projectId: "fadu-test",
@@ -97,6 +97,8 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const STATE_DOC = doc(db, "app", "estado");
+/* Pegá acá tu clave VAPID (Firebase Console > Configuración del proyecto > Cloud Messaging > Configuración web > Generar par de claves) */
+const VAPID_KEY = BPCm-BXfmeMKIsvhcFTLHSBZwBlvF2EWaFsJo-KhOI9mohjryrVT3USigXXAojGiCn3oWpy7YMVtQqWT52bSfVI;
 
 const ZONES = [
   { id: "SS", label: "Subsuelo" },
@@ -106,7 +108,7 @@ const ZONES = [
 ];
 const DELAY_MS = 15 * 60 * 1000;
 
-const APP_VERSION = "1.13.0";
+const APP_VERSION = "1.14.0";
 const VERSION_HISTORY = [
   { version: "1.6.0", changes: [
     "Arreglado un error que dejaba de guardar cambios después de contradecir una solicitud (afectaba solo a esas aulas puntuales).",
@@ -155,6 +157,11 @@ const VERSION_HISTORY = [
     "Arreglado: algunas cátedras cargadas anteriormente no reaccionaban al tocarlas en Personal.",
     "Ahora, si al pedir apertura/cierre una cátedra no está cargada, se puede cargar en el momento — pero no queda guardada de forma permanente, porque se considera algo puntual.",
   ]},
+  { version: "1.14.0", changes: [
+    "Sistema de permisos especiales para funciones administrativas sensibles.",
+    "En Personal se puede ver si cada persona tiene las notificaciones del celular permitidas o bloqueadas.",
+    "Notificaciones push reales: ahora pueden sonar y avisar aunque el celular esté bloqueado o la app cerrada (sujeto a que cada celular haya dado el permiso).",
+  ]},
 ];
 // se mantiene por compatibilidad con el resto del código, siempre apunta a la version mas nueva
 const CHANGELOG = VERSION_HISTORY[VERSION_HISTORY.length - 1].changes;
@@ -189,6 +196,31 @@ function notifyUser(title, body) {
   try {
     if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification(title, { body });
   } catch (e) {}
+}
+
+// registra este celular para recibir notificaciones push aunque la app esté cerrada.
+// si algo falla acá (falta la clave VAPID, el navegador no soporta push, etc.) la app
+// sigue funcionando normal igual, esto es 100% adicional.
+async function initPush(name) {
+  try {
+    if (VAPID_KEY === "PEGA_ACA_TU_VAPID_KEY") return; // todavia no se configuro
+    if (!("serviceWorker" in navigator) || typeof Notification === "undefined") return;
+    if (Notification.permission !== "granted") return;
+    const supported = await isSupported().catch(() => false);
+    if (!supported) return;
+    const reg = await navigator.serviceWorker.register("firebase-messaging-sw.js");
+    const messaging = getMessaging(app);
+    const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+    if (token) {
+      const current = (data.staff[name] && data.staff[name].fcmTokens) || [];
+      if (!current.includes(token)) saveStaff(name, { fcmTokens: [...current, token] });
+    }
+    onMessage(messaging, (payload) => {
+      const title = (payload.notification && payload.notification.title) || "Control Seguridad FADU";
+      const body = (payload.notification && payload.notification.body) || "";
+      notifyUser(title, body); // con la app abierta, reusa el mismo sonido/vibracion que ya tenemos
+    });
+  } catch (e) { /* sin push, pero la app sigue andando igual */ }
 }
 
 const notifiedRequestKeys = new Set();
@@ -552,7 +584,14 @@ function renderLogin() {
 function loginAs(name, s) {
   user = { name, role: s.role, zones: s.zones || [], turnos: staffTurnos(s), permisosExtra: s.permisosExtra || [] };
   saveSession(name);
-  if (typeof Notification !== "undefined" && Notification.permission === "default") { try { Notification.requestPermission(); } catch(e){} }
+  if (typeof Notification === "undefined") {
+    saveStaff(name, { notifStatus: "unsupported" });
+  } else if (Notification.permission === "default") {
+    Notification.requestPermission().then(result => { saveStaff(name, { notifStatus: result }); if (result === "granted") initPush(name); }).catch(()=>{});
+  } else {
+    saveStaff(name, { notifStatus: Notification.permission });
+    if (Notification.permission === "granted") initPush(name);
+  }
   startNoteChecker();
   document.getElementById("view-login").classList.add("hidden");
   document.getElementById("view-app").classList.remove("hidden");
@@ -1074,11 +1113,16 @@ function renderPersonal() {
       <button id="add-staff-btn" style="background:var(--ink);color:#F7F4EC;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:600;">+ Agregar</button>
     </div>
     <p style="font-size:11px;color:var(--ink-soft);margin-bottom:12px;">Tocá a una persona para cambiarle los pisos o el rol.</p>
-    ${!names.length ? `<p style="font-size:13px;color:var(--ink-soft);">Todavía no hay nadie cargado.</p>` : names.map(n => `
-      <button class="row-btn" data-edit-staff="${esc(n)}">
-        <span style="font-size:14px;">${data.staff[n].role==="jefe"?"👔":"🚶"} ${esc(n)} ${staffTurnos(data.staff[n]).map(t=>({manana:"☀️",tarde:"🌤️",noche:"🌙"}[t])).join("")}</span>
+    ${!names.length ? `<p style="font-size:13px;color:var(--ink-soft);">Todavía no hay nadie cargado.</p>` : names.map(n => {
+      const ns = data.staff[n].notifStatus;
+      const notifIcon = ns==="granted" ? "🔔" : ns==="denied" ? "🔕" : ns==="unsupported" ? "" : "❔";
+      const notifTitle = ns==="granted" ? "Notificaciones activadas" : ns==="denied" ? "Notificaciones bloqueadas — no le va a sonar nada" : ns==="unsupported" ? "" : "Todavía no entró a la app en este celular";
+      return `<button class="row-btn" data-edit-staff="${esc(n)}">
+        <span style="font-size:14px;">${data.staff[n].role==="jefe"?"👔":"🚶"} ${esc(n)} ${staffTurnos(data.staff[n]).map(t=>({manana:"☀️",tarde:"🌤️",noche:"🌙"}[t])).join("")} <span title="${notifTitle}">${notifIcon}</span></span>
         <span style="font-size:12px;color:var(--ink-soft);">${(data.staff[n].zones||[]).length ? data.staff[n].zones.map(z=>ZONES.find(zz=>zz.id===z)?.label).join(", ") : "sin piso"}</span>
-      </button>`).join("")}
+      </button>`;
+    }).join("")}
+    ${names.some(n => data.staff[n].notifStatus === "denied") ? `<p style="font-size:11px;color:var(--red);margin:8px 0 0;">🔕 Hay al menos una persona con las notificaciones bloqueadas — no le va a sonar ni vibrar nada. Tiene que entrar a la configuración del navegador de su celular y permitirlas a mano para este sitio.</p>` : ""}
     <div style="margin-top:32px;">
       <p class="display" style="font-size:18px;font-weight:700;margin-bottom:6px;">Cátedras</p>
       <p style="font-size:11px;color:var(--ink-soft);margin-bottom:10px;">Al pedir apertura/cierre se muestran solo las cátedras del turno y el día de quien pide. Tocá una para corregirla — los pedidos y el historial se actualizan solos.</p>

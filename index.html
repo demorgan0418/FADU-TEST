@@ -17,7 +17,7 @@
   body{margin:0;font-family:'IBM Plex Sans',sans-serif;background:var(--paper);color:var(--ink);}
   .display{font-family:'Fraunces',serif;}
   .mono{font-family:'IBM Plex Mono',monospace;}
-  #app{max-width:480px;margin:0 auto;min-height:100vh;}
+  #app{max-width:480px;margin:0 auto;min-height:100vh;min-height:100dvh;}
   button{font-family:inherit;border:none;cursor:pointer;background:none;}
   input{font-family:inherit;}
   .header{background:var(--ink);color:#F7F4EC;padding:20px 16px 12px;border-radius:0 0 14px 14px;display:flex;justify-content:space-between;align-items:center;}
@@ -38,7 +38,7 @@
   .btn-primary{background:var(--ink);color:#F7F4EC;padding:13px;border-radius:8px;font-weight:600;font-size:15px;width:100%;}
   .btn-primary:disabled{background:#C7BFA9;}
   .card{background:#fff;border:1px solid #D8CFB8;border-radius:10px;padding:12px;}
-  .chip{padding:8px 12px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid #D8CFB8;background:#fff;white-space:nowrap;}
+  .chip{padding:8px 12px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid #D8CFB8;background:#fff;min-width:0;}
   .chip.active{background:var(--ink);color:#F7F4EC;}
   .hidden{display:none !important;}
   .pin-input{letter-spacing:10px;text-align:center;font-size:22px;width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:12px;}
@@ -56,7 +56,10 @@
         <p class="display" style="font-size:18px;font-weight:700;margin:0;">Control Seguridad FADU</p>
         <p id="user-sub" style="font-size:12px;opacity:.75;margin:2px 0 0;"></p>
       </div>
-      <button id="btn-logout" style="color:#F7F4EC;font-size:20px;">⎋</button>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button id="btn-shift-action" class="hidden" style="color:#F7F4EC;font-size:11px;border:1px solid rgba(255,255,255,0.5);padding:5px 9px;border-radius:6px;white-space:nowrap;"></button>
+        <button id="btn-logout" style="color:#F7F4EC;font-size:20px;">⎋</button>
+      </div>
     </div>
     <div id="save-error" class="hidden" style="font-size:11px;color:var(--red);text-align:center;padding:6px 12px;">No se pudo guardar el último cambio. Revisá tu conexión.</div>
     <div id="content-root" style="padding:14px 16px;"></div>
@@ -91,6 +94,7 @@ const firebaseConfig = {
   appId: "1:468769530925:web:2685de102e1d25476044a4",
   measurementId: "G-NEB8RHFFGL"
 };
+
 /* ======================================================================================= */
 
 const app = initializeApp(firebaseConfig);
@@ -98,7 +102,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const STATE_DOC = doc(db, "app", "estado");
 /* Pegá acá tu clave VAPID (Firebase Console > Configuración del proyecto > Cloud Messaging > Configuración web > Generar par de claves) */
-const VAPID_KEY = "BPCm-BXfmeMKIsvhcFTLHSBZwBlvF2EWaFsJo-KhOI9mohjryrVT3USigXXAojGiCn3oWpy7YMVtQqWT52bSfVI";
+const VAPID_KEY = "BBZ0n-AuXpY4i7n55553QNhCqNeDioZhfw_oTSSw1nYwWPye54U2OTblOhmF3nxIgoH9qjxONYt8EkpfTFqhF4I";
 
 const ZONES = [
   { id: "SS", label: "Subsuelo" },
@@ -108,7 +112,7 @@ const ZONES = [
 ];
 const DELAY_MS = 15 * 60 * 1000;
 
-const APP_VERSION = "1.14.0";
+const APP_VERSION = "1.16.0";
 const VERSION_HISTORY = [
   { version: "1.6.0", changes: [
     "Arreglado un error que dejaba de guardar cambios después de contradecir una solicitud (afectaba solo a esas aulas puntuales).",
@@ -162,6 +166,46 @@ const VERSION_HISTORY = [
     "En Personal se puede ver si cada persona tiene las notificaciones del celular permitidas o bloqueadas.",
     "Notificaciones push reales: ahora pueden sonar y avisar aunque el celular esté bloqueado o la app cerrada (sujeto a que cada celular haya dado el permiso).",
   ]},
+  { version: "1.14.1", changes: [
+    "Notificaciones push: se prolijó el sonido para que use el del sistema en vez del propio, y se unificó la parte técnica que las recibe (evita conflictos). Por ahora, para que el aviso llegue seguro, la app tiene que estar abierta o minimizada (en segundo plano) — si se la cierra del todo de la lista de recientes, en algunos celulares no llega.",
+  ]},
+  { version: "1.15.0", changes: [
+    "Al cargar una cátedra (desde Personal o al pedir apertura/cierre), ahora va sugiriendo las que ya existen a medida que escribís, para no duplicar por error.",
+    "Una cátedra ahora puede tener varias aulas asociadas, no solo una — para los casos que abarcan 2 a 5 aulas, incluso de pisos distintos.",
+  ]},
+  { version: "1.15.1", changes: [
+    "Arreglado: el aviso de novedades (y otras ventanas) se cerraban solas apenas llegaba cualquier actualización de datos en tiempo real.",
+    "Arreglado: al otorgar el permiso de gestionar cátedras, ahora se aplica al toque para esa persona, sin que tenga que volver a entrar.",
+    "Al pedir apertura/cierre, los botones quedan primero y a la vista — elegir la cátedra pasó a ser un paso opcional más abajo, para no frenar a quien tiene apuro.",
+  ]},
+  { version: "1.15.2", changes: [
+    "Notificaciones push: se guarda un solo aviso vigente por persona en vez de acumularse, para que no lleguen dos notificaciones repetidas por el mismo pedido.",
+    "Al tocar una notificación push, ahora siempre abre o enfoca la app.",
+    "Arreglado: la barra de abajo (Inicio, Sectores, etc.) se escondía al hacer scroll — ahora queda fija.",
+    "Arreglado: la ficha de editar una persona se veía enorme en el celular y había que hacer zoom para verla entera.",
+    "Al pedir apertura/cierre, la lista de cátedras ahora filtra también por el aula — antes mostraba todas las del turno y el día, sin importar el aula.",
+    "Ahora se puede cargar más de una cátedra con el mismo nombre (por ejemplo, la misma persona con aulas distintas otro día) — antes quedaba bloqueado sin aviso.",
+  ]},
+  { version: "1.15.3", changes: [
+    "Arreglado: el sonido propio de la app (los 3 beeps de los avisos con la app abierta) podía quedar silenciado por el navegador al dispararse solo, sin un toque directo — ahora se destraba con el primer toque en pantalla.",
+    "Subido el volumen de ese sonido propio.",
+  ]},
+  { version: "1.15.4", changes: [
+    "Arreglado: si estabas cargando una cátedra, una nota, o cualquier formulario, y mientras tanto alguien más marcaba una puerta en otro lado, se perdía lo que estabas escribiendo. Ahora la pantalla espera a que termines antes de actualizarse.",
+  ]},
+  { version: "1.15.5", changes: [
+    "Arreglado: el cambio anterior se pasaba de la raya y borraba lo escrito al pasar de un campo a otro dentro del mismo formulario (por ejemplo, al elegir un aula o un turno) — ya quedó corregido, ahora solo protege contra cambios de otras personas.",
+  ]},
+  { version: "1.16.0", changes: [
+    "Arreglado de raíz: \"llave en poder de\" mostraba nombres sin relación real con esa puerta. Ahora se elige explícitamente quién tiene la llave al marcar (una o varias personas), y si no hay nadie dice \"Sin nadie asignado a la llave\".",
+    "Los jefes ahora pueden marcar puertas directamente (individual y en bloque), además de pedir apertura/cierre — para cubrir los casos que llegan por handy.",
+    "Al abrir el detalle de una puerta, si tiene cátedras asociadas se ven de un vistazo arriba de todo.",
+    "El desplegable de cátedra recuerda si lo dejaste abierto o cerrado, y aplica lo mismo a la próxima puerta que toques.",
+    "Nuevo buscador en Personal → Cátedras para encontrarlas más rápido.",
+    "Nuevo botón para que el personal de Pisos abandone su turno (se desasigna sus propios pisos).",
+    "Nuevo botón para que los jefes desasignen a todo el personal de Pisos de una sola vez.",
+    "Al cerrar sesión un jefe, si hay gente de Pisos con pisos asignados, se le pregunta si quiere desasignarlos antes de salir.",
+  ]},
 ];
 // se mantiene por compatibilidad con el resto del código, siempre apunta a la version mas nueva
 const CHANGELOG = VERSION_HISTORY[VERSION_HISTORY.length - 1].changes;
@@ -174,14 +218,28 @@ function elapsed(ts){ const m=Math.floor((now()-ts)/60000); if(m<1) return "reci
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* ---------- sonido / vibración / notificación ---------- */
+// los navegadores bloquean el sonido que no viene de un toque directo del usuario (para evitar
+// autoplay molesto). Como nuestros avisos se disparan solos (chequeos automáticos, no un click),
+// hay que "desbloquear" el audio en el primer toque que el usuario haga en la pantalla, y despues
+// reusar ese mismo contexto siempre — crear uno nuevo cada vez vuelve a quedar bloqueado.
+let audioCtx = null;
+function ensureAudioContext() {
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+  if (audioCtx.state === "suspended") audioCtx.resume().catch(()=>{});
+  return audioCtx;
+}
+document.addEventListener("click", () => ensureAudioContext(), { once: true });
+document.addEventListener("touchend", () => ensureAudioContext(), { once: true });
+
 function playAlert() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = ensureAudioContext();
+    if (!ctx) return;
     const beep = (start) => {
       const osc = ctx.createOscillator(), gain = ctx.createGain();
       osc.type = "sine"; osc.frequency.value = 880;
       gain.gain.setValueAtTime(0.001, start);
-      gain.gain.exponentialRampToValueAtTime(0.35, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.9, start + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.001, start + 0.18);
       osc.connect(gain); gain.connect(ctx.destination);
       osc.start(start); osc.stop(start + 0.2);
@@ -213,7 +271,9 @@ async function initPush(name) {
     const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
     if (token) {
       const current = (data.staff[name] && data.staff[name].fcmTokens) || [];
-      if (!current.includes(token)) saveStaff(name, { fcmTokens: [...current, token] });
+      // se guarda SOLO el token más nuevo (no se acumula) — así no llegan avisos duplicados
+      // desde tokens viejos de pruebas anteriores en el mismo celular.
+      if (current.length !== 1 || current[0] !== token) saveStaff(name, { fcmTokens: [token] });
     }
     onMessage(messaging, (payload) => {
       const title = (payload.notification && payload.notification.title) || "Control Seguridad FADU";
@@ -225,7 +285,10 @@ async function initPush(name) {
       // checkPendingNotifications / startNoteChecker), ahí sí tiene sentido.
       if (navigator.vibrate) navigator.vibrate([150, 80, 150, 80, 150]);
       try {
-        if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification(title, { body, icon: "icons/icon-192.png" });
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+          const n = new Notification(title, { body, icon: "icons/icon-192.png" });
+          n.onclick = () => { window.focus(); n.close(); };
+        }
       } catch (e) {}
     });
   } catch (e) { /* sin push, pero la app sigue andando igual */ }
@@ -272,7 +335,7 @@ function startNoteChecker() {
 function buildInitialDoors() {
   const doors = {};
   const add = (id, label, sector, sectorLabel, type, routine, hasTV, excludeFromStats) => {
-    doors[id] = { id, label, sector, sectorLabel, type, status: "closed", keyHolder: null, pendingRequest: null, routine, hasTV: !!hasTV, clean: false, anomalies: [], excludeFromStats: !!excludeFromStats };
+    doors[id] = { id, label, sector, sectorLabel, type, status: "closed", keyHolders: [], pendingRequest: null, routine, hasTV: !!hasTV, clean: false, anomalies: [], excludeFromStats: !!excludeFromStats };
   };
   // Subsuelo: Aula Magna + aulas 1 a 4
   add("SS-MAGNA", "Aula Magna", "SS", "Subsuelo", "aula", true);
@@ -339,10 +402,13 @@ function reconcileDoors(storedDoors) {
     const c = canonical[id];
     const s = storedDoors[id];
     const pr = s && s.pendingRequest ? { ...s.pendingRequest, catedra: s.pendingRequest.catedra || null } : (s ? s.pendingRequest : c.pendingRequest);
+    // "keyHolder" (texto, uno solo) es el formato viejo; "keyHolders" (lista) es el nuevo.
+    let keyHolders = c.keyHolders;
+    if (s) { keyHolders = Array.isArray(s.keyHolders) ? s.keyHolders : (s.keyHolder ? [s.keyHolder] : []); }
     result[id] = {
       ...c,
       status: s ? s.status : c.status,
-      keyHolder: s ? s.keyHolder : c.keyHolder,
+      keyHolders,
       pendingRequest: pr,
       clean: s ? !!s.clean : c.clean,
       anomalies: s && s.anomalies ? s.anomalies : c.anomalies,
@@ -606,10 +672,39 @@ function loginAs(name, s) {
   document.getElementById("tabs-nav").classList.remove("hidden");
   document.getElementById("tab-btn-personal").classList.toggle("hidden", user.role !== "jefe" && !isSuperuser(user));
   document.getElementById("user-sub").textContent = `${user.name} · ${user.role==="jefe"?"Oficina Seguridad":"Pisos"}`;
+  const shiftBtn = document.getElementById("btn-shift-action");
+  if (user.role === "recorrido") {
+    shiftBtn.textContent = "Abandonar turno";
+    shiftBtn.classList.remove("hidden");
+    shiftBtn.onclick = async () => {
+      if (!confirm("¿Confirmás que querés abandonar tu turno? Se te van a desasignar todos tus pisos y vas a dejar de recibir avisos hasta que un jefe te vuelva a asignar.")) return;
+      await unassignZonesFor([user.name]);
+      user.zones = [];
+    };
+  } else if (user.role === "jefe") {
+    shiftBtn.textContent = "Desasignar Pisos";
+    shiftBtn.classList.remove("hidden");
+    shiftBtn.onclick = async () => {
+      const names = Object.keys(data.staff).filter(n => data.staff[n].role === "recorrido" && (data.staff[n].zones||[]).length);
+      if (!names.length) { alert("No hay nadie de Pisos con pisos asignados ahora mismo."); return; }
+      if (!confirm(`¿Desasignar los pisos de las ${names.length} persona(s) de Pisos que los tienen asignados? Van a dejar de recibir avisos hasta que se les vuelva a asignar.`)) return;
+      await unassignZonesFor(names);
+    };
+  } else {
+    shiftBtn.classList.add("hidden");
+  }
   render();
   checkVersionPopup();
 }
-document.getElementById("btn-logout").onclick = () => { clearSession(); location.reload(); };
+document.getElementById("btn-logout").onclick = async () => {
+  if (user && user.role === "jefe") {
+    const names = Object.keys(data.staff).filter(n => data.staff[n].role === "recorrido" && (data.staff[n].zones||[]).length);
+    if (names.length && confirm(`¿Querés desasignar los pisos de las ${names.length} persona(s) de Pisos antes de salir? (para que no sigan recibiendo avisos si ya terminó el turno)`)) {
+      await unassignZonesFor(names);
+    }
+  }
+  clearSession(); location.reload();
+};
 document.querySelectorAll(".tab-btn").forEach(btn => btn.onclick = () => {
   tab = btn.dataset.tab;
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
@@ -622,12 +717,12 @@ function requestChange(doorId, type, catedra) {
   update(prev => ({ ...prev, doors: { ...prev.doors, [doorId]: { ...prev.doors[doorId], pendingRequest: { type, requestedBy: user.name, requestedAt: now(), catedra: catedra || null } } } }));
   selectedDoorId = null; render();
 }
-function markDoor(doorId, status, clean) {
+function markDoor(doorId, status, clean, keyHolders) {
   update(prev => {
     const d = prev.doors[doorId]; const pr = d.pendingRequest;
     const entry = { id:`${doorId}-${now()}`, doorId, doorLabel:d.label, action:status, requestedBy: pr?pr.requestedBy:null, requestedAt: pr?pr.requestedAt:null, catedra: (pr && pr.catedra) ? pr.catedra : null, executedBy:user.name, executedAt: now() };
     return { ...prev,
-      doors: { ...prev.doors, [doorId]: { ...d, status, keyHolder: status==="open"?user.name:null, pendingRequest:null, clean: status==="closed" ? !!clean : false } },
+      doors: { ...prev.doors, [doorId]: { ...d, status, keyHolders: status==="open" ? (keyHolders || []) : [], pendingRequest:null, clean: status==="closed" ? !!clean : false } },
       history: [entry, ...prev.history].slice(0,300) };
   });
   selectedDoorId = null; render();
@@ -643,12 +738,18 @@ function resolveAnomaly(doorId, anomalyId) {
   update(prev => { const d = prev.doors[doorId]; return { ...prev, doors: { ...prev.doors, [doorId]: { ...d, anomalies: (d.anomalies||[]).map(a=>a.id===anomalyId?{...a,resolved:true}:a) } } }; });
 }
 function saveStaff(name, fields) { update(prev => ({ ...prev, staff: { ...prev.staff, [name]: { ...(prev.staff[name]||{}), ...fields } } })); }
+// desasigna los pisos de varias personas de una sola vez, en un solo guardado — se puede esperar
+// (await) a que termine, por ejemplo antes de cerrar sesión, para no cortar el guardado a mitad de camino.
+async function unassignZonesFor(names) {
+  if (!names.length) return;
+  data = { ...data, staff: { ...data.staff, ...Object.fromEntries(names.map(n => [n, { ...data.staff[n], zones: [] }])) } };
+  render();
+  await persist();
+}
 function deleteStaff(name) { update(prev => { const s = {...prev.staff}; delete s[name]; return {...prev, staff:s}; }); }
 function addCatedra(cObj) {
   update(prev => {
     const list = prev.catedras || [];
-    const label = cObj.materia ? `${cObj.name} - ${cObj.materia}` : cObj.name;
-    if (list.some(c => catedraLabel(c) === label)) return prev;
     const withId = { id: `cat-${now()}-${Math.random().toString(36).slice(2,6)}`, ...cObj };
     return { ...prev, catedras: [...list, withId] };
   });
@@ -673,40 +774,79 @@ function renameCatedra(id, fields) {
 function catedraId(c) { return typeof c === "string" ? c : (c.id || catedraLabel(c)); }
 function catedraName(c) { return typeof c === "string" ? c : c.name; }
 function catedraMateria(c) { return typeof c === "string" ? null : (c.materia || null); }
-function catedraAula(c) { return typeof c === "string" ? null : (c.aula || null); }
-function aulaLabel(id) { return id ? (data.doors[id]?.label || id) : null; }
-// campo de texto con sugerencias en vivo de las aulas/depositos reales, en vez de un select o texto libre
-function aulaAutocompleteHTML(inputId, sugId, initialId) {
-  return `<div style="position:relative;margin-bottom:10px;">
-    <input id="${inputId}" value="${esc(aulaLabel(initialId) || "")}" placeholder="Aula habitual (opcional) — escribí para buscar" autocomplete="off"
-      style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;" />
-    <div id="${sugId}" class="hidden" style="position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #D8CFB8;border-radius:8px;max-height:180px;overflow-y:auto;z-index:5;margin-top:2px;"></div>
-  </div>`;
+// una catedra puede tener varias aulas asociadas. Las viejas tenian una sola ("aula"); las nuevas
+// tienen una lista ("aulas"). Esto entiende los dos formatos para no perder nada de lo ya cargado.
+function catedraAulas(c) {
+  if (typeof c === "string") return [];
+  if (Array.isArray(c.aulas)) return c.aulas;
+  if (c.aula) return [c.aula]; // formato viejo (una sola aula)
+  return [];
 }
-// conecta el input+sugerencias. Devuelve un objeto con getId() para leer el aula elegida al guardar.
-function bindAulaAutocomplete(inputId, sugId, initialId) {
+function aulaLabel(id) { return id ? (data.doors[id]?.label || id) : null; }
+
+// selector de VARIAS aulas: muestra las ya elegidas como chips (con una X para sacarlas) y abajo
+// un buscador para ir agregando más, en vez de un campo de texto libre o un select de una sola.
+function multiAulaPickerHTML(id) {
+  return `<div id="${id}" style="margin-bottom:10px;"></div>`;
+}
+function bindMultiAulaPicker(id, initialIds) {
+  let selectedIds = [...(initialIds || [])];
+  const container = document.getElementById(id);
+  const render = () => {
+    container.innerHTML = `
+      ${selectedIds.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+        ${selectedIds.map(aid => `<span class="chip active" style="display:inline-flex;align-items:center;gap:5px;">${esc(aulaLabel(aid) || aid)} <button type="button" data-remove-aula="${esc(aid)}" style="font-size:13px;line-height:1;color:var(--red);">×</button></span>`).join("")}
+      </div>` : ""}
+      <div style="position:relative;">
+        <input id="${id}-input" placeholder="Aulas habituales (opcional) — escribí para buscar y agregar" autocomplete="off"
+          style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;" />
+        <div id="${id}-sug" class="hidden" style="position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #D8CFB8;border-radius:8px;max-height:180px;overflow-y:auto;z-index:5;margin-top:2px;"></div>
+      </div>`;
+    container.querySelectorAll("[data-remove-aula]").forEach(b => b.onclick = () => { selectedIds = selectedIds.filter(x => x !== b.dataset.removeAula); render(); });
+    const inputEl = document.getElementById(`${id}-input`), sugEl = document.getElementById(`${id}-sug`);
+    const renderSuggestions = (query) => {
+      const q = query.trim().toLowerCase();
+      if (!q) { sugEl.innerHTML = ""; sugEl.classList.add("hidden"); return; }
+      const matches = Object.values(data.doors).filter(d => !selectedIds.includes(d.id) && (d.label.toLowerCase().includes(q) || d.sectorLabel.toLowerCase().includes(q)))
+        .sort((a,b)=>a.label.localeCompare(b.label,"es",{numeric:true})).slice(0, 8);
+      if (!matches.length) { sugEl.innerHTML = `<p style="font-size:12px;color:var(--ink-soft);padding:8px 10px;margin:0;">Sin resultados.</p>`; sugEl.classList.remove("hidden"); return; }
+      sugEl.innerHTML = matches.map(d => `<button type="button" class="aula-suggestion" data-id="${esc(d.id)}" style="display:flex;justify-content:space-between;width:100%;padding:8px 10px;border-bottom:1px solid #E4DECB;text-align:left;background:#fff;">
+          <span style="font-size:13px;">${esc(d.label)}</span><span style="font-size:11px;color:var(--ink-soft);">${esc(d.sectorLabel)}</span>
+        </button>`).join("");
+      sugEl.classList.remove("hidden");
+      sugEl.querySelectorAll(".aula-suggestion").forEach(b => b.onclick = () => {
+        selectedIds = [...selectedIds, b.dataset.id];
+        inputEl.value = "";
+        sugEl.innerHTML = ""; sugEl.classList.add("hidden");
+        render();
+      });
+    };
+    inputEl.oninput = () => renderSuggestions(inputEl.value);
+    inputEl.onblur = () => { setTimeout(() => sugEl.classList.add("hidden"), 150); };
+  };
+  render();
+  return { getIds: () => selectedIds };
+}
+
+// sugiere nombres de catedras YA cargadas mientras se escribe, para no duplicar por error.
+// no obliga a elegir una — si escribís algo nuevo, se usa tal cual (sirve para crear una cátedra nueva).
+function bindCatedraNameSuggest(inputId, sugId) {
   const inputEl = document.getElementById(inputId), sugEl = document.getElementById(sugId);
-  let selectedId = initialId || null;
-  const renderSuggestions = (query) => {
-    const q = query.trim().toLowerCase();
+  if (!inputEl || !sugEl) return;
+  const names = [...new Set((data.catedras || []).map(c => catedraName(c)))];
+  inputEl.addEventListener("input", () => {
+    const q = inputEl.value.trim().toLowerCase();
     if (!q) { sugEl.innerHTML = ""; sugEl.classList.add("hidden"); return; }
-    const matches = Object.values(data.doors).filter(d => d.label.toLowerCase().includes(q) || d.sectorLabel.toLowerCase().includes(q))
-      .sort((a,b)=>a.label.localeCompare(b.label,"es",{numeric:true})).slice(0, 8);
-    if (!matches.length) { sugEl.innerHTML = `<p style="font-size:12px;color:var(--ink-soft);padding:8px 10px;margin:0;">Sin resultados.</p>`; sugEl.classList.remove("hidden"); return; }
-    sugEl.innerHTML = matches.map(d => `<button type="button" class="aula-suggestion" data-id="${esc(d.id)}" style="display:flex;justify-content:space-between;width:100%;padding:8px 10px;border-bottom:1px solid #E4DECB;text-align:left;background:#fff;">
-        <span style="font-size:13px;">${esc(d.label)}</span><span style="font-size:11px;color:var(--ink-soft);">${esc(d.sectorLabel)}</span>
-      </button>`).join("");
+    const matches = names.filter(n => n.toLowerCase().includes(q)).slice(0, 6);
+    if (!matches.length) { sugEl.innerHTML = ""; sugEl.classList.add("hidden"); return; }
+    sugEl.innerHTML = matches.map(n => `<button type="button" class="catname-suggestion" data-name="${esc(n)}" style="display:block;width:100%;padding:8px 10px;border-bottom:1px solid #E4DECB;text-align:left;background:#fff;font-size:13px;">${esc(n)}</button>`).join("");
     sugEl.classList.remove("hidden");
-    sugEl.querySelectorAll(".aula-suggestion").forEach(b => b.onclick = () => {
-      selectedId = b.dataset.id;
-      inputEl.value = aulaLabel(selectedId);
+    sugEl.querySelectorAll(".catname-suggestion").forEach(b => b.onclick = () => {
+      inputEl.value = b.dataset.name;
       sugEl.innerHTML = ""; sugEl.classList.add("hidden");
     });
-  };
-  inputEl.oninput = () => { selectedId = null; renderSuggestions(inputEl.value); };
-  inputEl.onfocus = () => { if (inputEl.value) renderSuggestions(inputEl.value); };
-  inputEl.onblur = () => { setTimeout(() => sugEl.classList.add("hidden"), 150); }; // delay para que el click en la sugerencia llegue a tiempo
-  return { getId: () => selectedId };
+  });
+  inputEl.addEventListener("blur", () => setTimeout(() => sugEl.classList.add("hidden"), 150));
 }
 function catedraLabel(c) { const n = catedraName(c), m = catedraMateria(c); return m ? `${n} - ${m}` : n; }
 function catedraTurnos(c) {
@@ -732,24 +872,33 @@ const CAPABILITIES = [
   { id: "gestionCatedras", label: "Gestionar el catálogo general de cátedras (crear, editar, borrar para todos)" },
 ];
 function isSuperuser(u) { return !!(u && u.name && u.name.toLowerCase() === SUPERUSER_NAME); }
+// personal de "Pisos" (recorrido) asignado a un sector, para elegir quien tiene la llave al marcar
+function pisosStaffForSector(sectorId) {
+  return Object.keys(data.staff).filter(n => data.staff[n].role === "recorrido" && (data.staff[n].zones||[]).includes(sectorId));
+}
 function hasPermission(u, cap) {
   if (!u) return false;
   if (isSuperuser(u)) return true; // el superusuario puede todo, sin necesidad de otorgarselo
-  return !!(u.permisosExtra && u.permisosExtra.includes(cap));
+  // se chequea contra el dato mas fresco (no la copia que se guardo en el momento del login),
+  // asi un permiso otorgado por el superusuario aplica al toque, sin que haga falta reingresar.
+  const live = data && data.staff && data.staff[u.name];
+  const perms = (live && live.permisosExtra) || u.permisosExtra || [];
+  return perms.includes(cap);
 }
 
 // las catedras sin turno/dia cargado siguen mostrandose siempre (compatibilidad con lo ya cargado).
 // las que sí tienen turno, solo se muestran si algún turno coincide con los de quien pide (o si quien
 // pide no tiene ningún turno cargado, en cuyo caso se muestran todas para no ocultar nada por error).
-function catedrasForToday() {
+function catedrasForToday(doorId) {
   const list = data.catedras || [];
   const today = new Date().getDay();
   const myTurnos = (user && user.turnos) || [];
   return list.filter(c => {
-    const turnos = catedraTurnos(c), dias = catedraDias(c);
+    const turnos = catedraTurnos(c), dias = catedraDias(c), aulas = catedraAulas(c);
     const turnoOk = !turnos.length || !myTurnos.length || turnos.some(t => myTurnos.includes(t));
     const diaOk = !dias.length || dias.includes(today);
-    return turnoOk && diaOk;
+    const aulaOk = !aulas.length || !doorId || aulas.includes(doorId);
+    return turnoOk && diaOk && aulaOk;
   });
 }
 function addNote(note) { update(prev => ({ ...prev, notes: [{ id:`note-${now()}`, createdBy:user.name, createdAt:now(), doorIds: note.doorIds||[], dismissedOccurrences: [], ...note }, ...(prev.notes||[])] })); }
@@ -840,13 +989,14 @@ function bulkRequest(type) {
   update(prev => { const doors = {...prev.doors}; selectedIds.forEach(id => { doors[id] = {...doors[id], pendingRequest:{type, requestedBy:user.name, requestedAt:now(), catedra:null}}; }); return {...prev, doors}; });
   clearSelection();
 }
-function bulkMark(status, clean) {
+function bulkMark(status, clean, keyHolders) {
+  const finalHolders = keyHolders !== undefined ? keyHolders : ((status==="open" && user.role==="recorrido") ? [user.name] : []);
   update(prev => {
     const doors = {...prev.doors}; const entries = [];
     selectedIds.forEach(id => {
       const d = doors[id]; const pr = d.pendingRequest;
       entries.push({ id:`${id}-${now()}-${Math.random().toString(36).slice(2,6)}`, doorId:id, doorLabel:d.label, action:status, requestedBy:pr?pr.requestedBy:null, requestedAt:pr?pr.requestedAt:null, catedra: (pr && pr.catedra) ? pr.catedra : null, executedBy:user.name, executedAt:now() });
-      doors[id] = { ...d, status, keyHolder: status==="open"?user.name:null, pendingRequest:null, clean: status==="closed" ? !!clean : false };
+      doors[id] = { ...d, status, keyHolders: status==="open" ? finalHolders : [], pendingRequest:null, clean: status==="closed" ? !!clean : false };
     });
     return { ...prev, doors, history: [...entries, ...prev.history].slice(0,300) };
   });
@@ -890,6 +1040,18 @@ function bindPlates(root) {
 }
 
 /* ---------- render principal ---------- */
+// si el usuario tiene el foco en un campo (escribiendo, tocando un chip) DENTRO del contenedor dado,
+// no hay que regenerar ese contenedor por una actualización de datos que llega de otro lado — sino,
+// se le borra lo que estaba completando (esto le pasaba a Bedelia cargando cátedras, o al cargar una
+// nota, si alguien más marcaba una puerta mientras tanto).
+function isEditingWithin(containerId) {
+  const el = document.activeElement;
+  if (!el || el === document.body) return false;
+  if (!["INPUT","TEXTAREA","SELECT"].includes(el.tagName)) return false;
+  const container = document.getElementById(containerId);
+  return !!(container && container.contains(el));
+}
+
 function render() {
   if (!loaded) return;
   if (!user) { renderLogin(); return; }
@@ -903,13 +1065,15 @@ function render() {
 
   const root = document.getElementById("content-root");
   root.style.paddingBottom = selectionMode ? "230px" : "76px";
-  if (tab==="inicio") root.innerHTML = renderInicio(allDoors, pendingList);
-  if (tab==="sectores") root.innerHTML = renderSectores(allDoors);
-  if (tab==="solicitudes") root.innerHTML = renderSolicitudes(pendingList);
-  if (tab==="historial") root.innerHTML = renderHistorial();
-  if (tab==="personal" && (user.role==="jefe" || isSuperuser(user))) root.innerHTML = renderPersonal();
-  bindTabHandlers(root);
-  bindPlates(root);
+  if (!isEditingWithin("content-root")) {
+    if (tab==="inicio") root.innerHTML = renderInicio(allDoors, pendingList);
+    if (tab==="sectores") root.innerHTML = renderSectores(allDoors);
+    if (tab==="solicitudes") root.innerHTML = renderSolicitudes(pendingList);
+    if (tab==="historial") root.innerHTML = renderHistorial();
+    if (tab==="personal" && (user.role==="jefe" || isSuperuser(user))) root.innerHTML = renderPersonal();
+    bindTabHandlers(root);
+    bindPlates(root);
+  }
 
   renderSelectionBar(pendingList);
   renderDoorDetail();
@@ -1079,9 +1243,12 @@ function renderPersonal() {
   const canManageCatedras = hasPermission(user, "gestionCatedras");
   const catedrasBlock = canManageCatedras ? `
       <div class="card" style="margin-bottom:14px;">
-        <input id="new-catedra-input" placeholder="Ej: González" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px;" />
+        <div style="position:relative;margin-bottom:8px;">
+          <input id="new-catedra-input" placeholder="Ej: González" autocomplete="off" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;" />
+          <div id="new-catedra-input-sug" class="hidden" style="position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #D8CFB8;border-radius:8px;max-height:160px;overflow-y:auto;z-index:5;margin-top:2px;"></div>
+        </div>
         <input id="new-catedra-materia" placeholder="Materia (opcional, ej: Cálculo)" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px;" />
-        ${aulaAutocompleteHTML("new-catedra-aula", "new-catedra-aula-sug", null)}
+        ${multiAulaPickerHTML("new-catedra-aulas")}
         <label class="mono" style="font-size:11px;color:var(--ink-soft);">TURNO (podés elegir más de uno)</label>
         <div style="display:flex;gap:6px;margin:6px 0 10px;">
           <button data-newcat-turno="manana" class="chip newcat-turno" style="flex:1;font-size:12px;">☀️ Mañana</button>
@@ -1094,14 +1261,22 @@ function renderPersonal() {
         </div>
         <button id="new-catedra-btn" class="btn-primary" disabled>+ Agregar cátedra</button>
       </div>
-      ${!catedras.length ? `<p style="font-size:13px;color:var(--ink-soft);">Todavía no cargaste ninguna cátedra.</p>` : `<div style="display:flex;flex-wrap:wrap;gap:8px;">${catedras.map(c=>{
-        const turnos = catedraTurnos(c), dias = catedraDias(c), aula = catedraAula(c);
+      ${catedras.length > 5 ? `<input id="catedra-search" placeholder="🔍 Buscar cátedra por nombre, materia o aula..." style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:10px;" />` : ""}
+      ${!catedras.length ? `<p style="font-size:13px;color:var(--ink-soft);">Todavía no cargaste ninguna cátedra.</p>` : `<div id="catedra-chip-list" style="display:flex;flex-wrap:wrap;gap:8px;">${catedras.map(c=>{
+        const turnos = catedraTurnos(c), dias = catedraDias(c), aulas = catedraAulas(c);
         const turnoIcons = turnos.map(t=>({manana:"☀️",tarde:"🌤️",noche:"🌙"}[t])).join("");
         const diasTxt = dias.length ? dias.map(d=>["D","L","M","X","J","V","S"][d]).join("") : "";
-        return `<button class="chip" data-edit-catedra="${esc(catedraId(c))}">✎ ${esc(catedraLabel(c))}${aula?` (aula ${esc(aulaLabel(aula))})`:""}${turnoIcons?` ${turnoIcons}`:""}${diasTxt?` ${diasTxt}`:""}</button>`;
+        const aulasTxt = aulas.length ? ` (${aulas.map(a=>esc(aulaLabel(a))).join(", ")})` : "";
+        const searchTxt = esc(`${catedraLabel(c)} ${aulas.map(a=>aulaLabel(a)).join(" ")}`.toLowerCase());
+        return `<button class="chip catedra-chip" data-search="${searchTxt}" data-edit-catedra="${esc(catedraId(c))}">✎ ${esc(catedraLabel(c))}${aulasTxt}${turnoIcons?` ${turnoIcons}`:""}${diasTxt?` ${diasTxt}`:""}</button>`;
       }).join("")}</div>`}` : `
       <p style="font-size:13px;color:var(--ink-soft);margin-bottom:10px;">No tenés permiso para gestionar el catálogo general de cátedras. Podés cargar una cátedra puntual al pedir apertura/cierre — queda guardada solo en ese pedido.</p>
-      ${!catedras.length ? "" : `<div style="display:flex;flex-wrap:wrap;gap:8px;">${catedras.map(c=>`<span class="chip" style="opacity:.7;">${esc(catedraLabel(c))}</span>`).join("")}</div>`}`;
+      ${catedras.length > 5 ? `<input id="catedra-search" placeholder="🔍 Buscar cátedra por nombre, materia o aula..." style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:10px;" />` : ""}
+      ${!catedras.length ? "" : `<div id="catedra-chip-list" style="display:flex;flex-wrap:wrap;gap:8px;">${catedras.map(c=>{
+        const aulas = catedraAulas(c);
+        const searchTxt = esc(`${catedraLabel(c)} ${aulas.map(a=>aulaLabel(a)).join(" ")}`.toLowerCase());
+        return `<span class="chip catedra-chip" data-search="${searchTxt}" style="opacity:.7;">${esc(catedraLabel(c))}</span>`;
+      }).join("")}</div>`}`;
 
   const permisosBlock = isSuperuser(user) ? `
     <div style="margin-top:32px;">
@@ -1131,6 +1306,7 @@ function renderPersonal() {
       </button>`;
     }).join("")}
     ${names.some(n => data.staff[n].notifStatus === "denied") ? `<p style="font-size:11px;color:var(--red);margin:8px 0 0;">🔕 Hay al menos una persona con las notificaciones bloqueadas — no le va a sonar ni vibrar nada. Tiene que entrar a la configuración del navegador de su celular y permitirlas a mano para este sitio.</p>` : ""}
+    <p style="font-size:11px;color:var(--ink-soft);margin:8px 0 0;">📱 Para que los avisos siempre lleguen, la app tiene que quedar <b>abierta o minimizada</b> (en segundo plano) — si se cierra del todo de la lista de apps recientes, en algunos celulares el aviso no llega.</p>
     <div style="margin-top:32px;">
       <p class="display" style="font-size:18px;font-weight:700;margin-bottom:6px;">Cátedras</p>
       <p style="font-size:11px;color:var(--ink-soft);margin-bottom:10px;">Al pedir apertura/cierre se muestran solo las cátedras del turno y el día de quien pide. Tocá una para corregirla — los pedidos y el historial se actualizan solos.</p>
@@ -1171,9 +1347,17 @@ function bindTabHandlers(root) {
     if (addBtn) addBtn.onclick = () => openStaffSheet(null);
     root.querySelectorAll("[data-edit-staff]").forEach(b => b.onclick = () => openStaffSheet(b.dataset.editStaff));
     root.querySelectorAll("[data-edit-catedra]").forEach(b => b.onclick = () => openCatedraSheet(b.dataset.editCatedra));
+    const catSearch = document.getElementById("catedra-search");
+    if (catSearch) catSearch.oninput = () => {
+      const q = catSearch.value.trim().toLowerCase();
+      root.querySelectorAll(".catedra-chip").forEach(chip => {
+        chip.style.display = (!q || (chip.dataset.search||"").includes(q)) ? "" : "none";
+      });
+    };
     const ci = document.getElementById("new-catedra-input"), cb = document.getElementById("new-catedra-btn");
     const cMateria = document.getElementById("new-catedra-materia");
-    const aulaAc = document.getElementById("new-catedra-aula") ? bindAulaAutocomplete("new-catedra-aula", "new-catedra-aula-sug", null) : null;
+    const aulasWidget = document.getElementById("new-catedra-aulas") ? bindMultiAulaPicker("new-catedra-aulas", []) : null;
+    bindCatedraNameSuggest("new-catedra-input", "new-catedra-input-sug");
     if (cb) {
       let newCatTurnos = [], newCatDias = [];
       const check = () => cb.disabled = !ci.value.trim();
@@ -1186,8 +1370,8 @@ function bindTabHandlers(root) {
       });
       cb.onclick = () => {
         if (!ci.value.trim()) return;
-        addCatedra({ name: ci.value.trim(), materia: cMateria.value.trim() || null, aula: aulaAc ? aulaAc.getId() : null, turnos: newCatTurnos, dias: newCatDias });
-        ci.value = ""; cMateria.value = ""; document.getElementById("new-catedra-aula").value = ""; newCatTurnos = []; newCatDias = [];
+        addCatedra({ name: ci.value.trim(), materia: cMateria.value.trim() || null, aulas: aulasWidget ? aulasWidget.getIds() : [], turnos: newCatTurnos, dias: newCatDias });
+        ci.value = ""; cMateria.value = ""; newCatTurnos = []; newCatDias = [];
         root.querySelectorAll(".newcat-turno, .newcat-day").forEach(x=>x.classList.remove("active"));
         check();
       };
@@ -1246,7 +1430,22 @@ function renderSelectionBar(pendingList) {
   div.id = "selection-bar-root";
   div.className = "fixed";
   div.style.cssText = "position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;";
-  div.innerHTML = `<div style="max-width:480px;width:100%;background:#fff;border-top:1px solid #D8CFB8;padding:10px 14px 14px;">
+  // union de personal de Pisos de todos los sectores de lo seleccionado, para elegir quien tiene la llave
+  const sectorsInSel = [...new Set(selectedIds.map(id => data.doors[id]?.sector).filter(Boolean))];
+  const selStaffOptions = [...new Set(sectorsInSel.flatMap(pisosStaffForSector))];
+  const markSection = `
+      <p style="font-size:11px;color:var(--ink-soft);margin:4px 0;">¿Quién tiene la llave? (opcional, podés elegir más de uno)</p>
+      <div id="sel-keyholders" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+        ${selStaffOptions.length ? selStaffOptions.map(n=>`<button type="button" class="chip sel-kh" data-name="${esc(n)}">${esc(n)}</button>`).join("") : `<span style="font-size:11px;color:var(--ink-soft);">No hay nadie de Pisos asignado a estos sectores.</span>`}
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px;color:var(--ink-soft);">
+        <input type="checkbox" id="sel-clean" /> Quedaron cerradas y limpias (limpieza no las necesita revisar)
+      </label>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <button id="sel-mark-open" style="flex:1;padding:8px;border-radius:6px;background:var(--green);color:#fff;font-size:12px;font-weight:700;">Marcar abiertas</button>
+        <button id="sel-mark-closed" style="flex:1;padding:8px;border-radius:6px;background:var(--red);color:#fff;font-size:12px;font-weight:700;">Marcar cerradas</button>
+      </div>`;
+  div.innerHTML = `<div style="max-width:480px;width:100%;background:#fff;border-top:1px solid #D8CFB8;padding:10px 14px 14px;max-height:70vh;overflow-y:auto;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
         <span style="font-size:13px;font-weight:700;">${selectedIds.length} seleccionada${selectedIds.length===1?"":"s"}</span>
         <button id="sel-cancel" style="font-size:12px;color:var(--ink-soft);">✕ Cancelar</button>
@@ -1254,20 +1453,27 @@ function renderSelectionBar(pendingList) {
       ${user.role==="jefe" ? `<div style="display:flex;gap:8px;margin-bottom:8px;">
         <button id="sel-req-open" style="flex:1;padding:8px;border-radius:6px;background:var(--green-soft);font-size:12px;font-weight:600;">Pedir apertura</button>
         <button id="sel-req-closed" style="flex:1;padding:8px;border-radius:6px;background:var(--red-soft);font-size:12px;font-weight:600;">Pedir cierre</button>
-      </div>` : ""}
-      <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px;color:var(--ink-soft);">
-        <input type="checkbox" id="sel-clean" /> Quedaron cerradas y limpias (limpieza no las necesita revisar)
-      </label>
-      <div style="display:flex;gap:8px;margin-bottom:8px;">
-        <button id="sel-mark-open" style="flex:1;padding:8px;border-radius:6px;background:var(--green);color:#fff;font-size:12px;font-weight:700;">Marcar abiertas</button>
-        <button id="sel-mark-closed" style="flex:1;padding:8px;border-radius:6px;background:var(--red);color:#fff;font-size:12px;font-weight:700;">Marcar cerradas</button>
       </div>
+      <details style="margin-bottom:8px;">
+        <summary style="font-size:11px;color:var(--ink-soft);cursor:pointer;">¿Ya lo hicieron por handy? Marcar directamente</summary>
+        <div style="margin-top:8px;">${markSection}</div>
+      </details>` : markSection}
       <button id="sel-add-note" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--brass);font-size:12px;font-weight:600;">📝 Agregar nota para estas aulas</button>
     </div>`;
   document.body.appendChild(div);
   document.getElementById("sel-cancel").onclick = clearSelection;
-  document.getElementById("sel-mark-open").onclick = () => { const doorsArr = selectedIds.map(id=>data.doors[id]); if (confirmIfMismatch(doorsArr, "open")) bulkMark("open"); };
-  document.getElementById("sel-mark-closed").onclick = () => { const doorsArr = selectedIds.map(id=>data.doors[id]); if (confirmIfMismatch(doorsArr, "closed")) bulkMark("closed", document.getElementById("sel-clean").checked); };
+  let selKeyHolders = (user.role === "recorrido" && selStaffOptions.includes(user.name)) ? [user.name] : [];
+  div.querySelectorAll(".sel-kh").forEach(b => {
+    if (selKeyHolders.includes(b.dataset.name)) b.classList.add("active");
+    b.onclick = () => {
+      const n = b.dataset.name;
+      selKeyHolders = selKeyHolders.includes(n) ? selKeyHolders.filter(x=>x!==n) : [...selKeyHolders, n];
+      b.classList.toggle("active", selKeyHolders.includes(n));
+    };
+  });
+  const markOpenSelBtn = document.getElementById("sel-mark-open"), markClosedSelBtn = document.getElementById("sel-mark-closed");
+  if (markOpenSelBtn) markOpenSelBtn.onclick = () => { const doorsArr = selectedIds.map(id=>data.doors[id]); if (confirmIfMismatch(doorsArr, "open")) bulkMark("open", false, selKeyHolders); };
+  if (markClosedSelBtn) markClosedSelBtn.onclick = () => { const doorsArr = selectedIds.map(id=>data.doors[id]); if (confirmIfMismatch(doorsArr, "closed")) bulkMark("closed", document.getElementById("sel-clean").checked); };
   const ro = document.getElementById("sel-req-open"), rc = document.getElementById("sel-req-closed");
   if (ro) ro.onclick = () => { const doorsArr = selectedIds.map(id=>data.doors[id]); if (confirmIfAlreadyInState(doorsArr, "open")) bulkRequest("open"); };
   if (rc) rc.onclick = () => { const doorsArr = selectedIds.map(id=>data.doors[id]); if (confirmIfAlreadyInState(doorsArr, "closed")) bulkRequest("closed"); };
@@ -1393,12 +1599,14 @@ function openCatedraSheet(id) {
         <button id="cat-close" style="font-size:20px;">✕</button>
       </div>
       <label class="mono" style="font-size:11px;color:var(--ink-soft);">NOMBRE</label>
-      <input id="cat-name" value="${esc(catedraName(existing))}" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:11px 12px;font-size:14px;margin:6px 0 10px;" />
+      <div style="position:relative;margin:6px 0 10px;">
+        <input id="cat-name" value="${esc(catedraName(existing))}" autocomplete="off" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:11px 12px;font-size:14px;" />
+        <div id="cat-name-sug" class="hidden" style="position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #D8CFB8;border-radius:8px;max-height:160px;overflow-y:auto;z-index:5;margin-top:2px;"></div>
+      </div>
       <label class="mono" style="font-size:11px;color:var(--ink-soft);">MATERIA (opcional)</label>
       <input id="cat-materia" value="${esc(catedraMateria(existing) || "")}" placeholder="Ej: Cálculo" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:11px 12px;font-size:14px;margin:6px 0 10px;" />
-      <label class="mono" style="font-size:11px;color:var(--ink-soft);">AULA HABITUAL (opcional)</label>
-      ${aulaAutocompleteHTML("cat-aula", "cat-aula-sug", catedraAula(existing))}
-      <p id="cat-error" class="hidden" style="font-size:11px;color:var(--red);margin-bottom:10px;">Ya existe una cátedra con ese nombre y esa materia.</p>
+      <label class="mono" style="font-size:11px;color:var(--ink-soft);">AULAS HABITUALES (opcional, podés elegir varias)</label>
+      ${multiAulaPickerHTML("cat-aulas")}
       <p style="font-size:11px;color:var(--ink-soft);margin-bottom:16px;">Los pedidos y el historial ya cargados con este nombre se actualizan solos si lo cambiás.</p>
       <label class="mono" style="font-size:11px;color:var(--ink-soft);">TURNO (podés elegir más de uno)</label>
       <div style="display:flex;gap:6px;margin:8px 0 16px;">
@@ -1416,7 +1624,8 @@ function openCatedraSheet(id) {
     </div></div>`;
   const close = () => { root.innerHTML = ""; };
   document.getElementById("cat-close").onclick = close;
-  const aulaAc = bindAulaAutocomplete("cat-aula", "cat-aula-sug", catedraAula(existing));
+  const aulasWidget = bindMultiAulaPicker("cat-aulas", catedraAulas(existing));
+  bindCatedraNameSuggest("cat-name", "cat-name-sug");
   document.getElementById("cat-sheet-bg").onclick = (e) => { if (e.target.id==="cat-sheet-bg") close(); };
   root.querySelectorAll(".cat-turno").forEach(b => b.onclick = () => { const t = b.dataset.catTurno; turnos = turnos.includes(t) ? turnos.filter(x=>x!==t) : [...turnos, t]; b.classList.toggle("active", turnos.includes(t)); });
   root.querySelectorAll(".cat-day").forEach(b => b.onclick = () => {
@@ -1427,29 +1636,32 @@ function openCatedraSheet(id) {
   document.getElementById("cat-save").onclick = () => {
     const val = document.getElementById("cat-name").value.trim();
     const materia = document.getElementById("cat-materia").value.trim() || null;
-    const aula = aulaAc.getId();
+    const aulas = aulasWidget.getIds();
     if (!val) return;
-    const newLabel = materia ? `${val} - ${materia}` : val;
-    const oldLabel = catedraLabel(existing);
-    if (newLabel !== oldLabel && (data.catedras||[]).some(c => catedraId(c)!==id && catedraLabel(c) === newLabel)) { document.getElementById("cat-error").classList.remove("hidden"); return; }
-    renameCatedra(id, { name: val, materia, aula, turnos, dias });
+    renameCatedra(id, { name: val, materia, aulas, turnos, dias });
     close();
   };
   document.getElementById("cat-delete").onclick = () => { if (confirm(`¿Eliminar la cátedra ${catedraLabel(existing)}?`)) { removeCatedra(id); close(); } };
 }
 
 /* ---------- detalle de puerta ---------- */
-let selectedCatedra = null, markCleanChecked = false;
+let selectedCatedra = null, markCleanChecked = false, catedraDetailsOpen = false;
+// estos ids son los fondos de las distintas "hojas" modales que se dibujan en #detail-root.
+// si cualquiera de estas está abierta, renderDoorDetail no tiene que pisarla — sino, cualquier
+// actualización de datos en tiempo real (de cualquier usuario, en cualquier parte de la app)
+// las cerraba solas antes de que se llegaran a leer.
+const OTHER_MODAL_IDS = ["all-notes-bg", "version-popup-bg", "full-changelog-bg", "staff-sheet-bg", "cat-sheet-bg", "note-sheet-bg"];
 function renderDoorDetail() {
   const root = document.getElementById("detail-root");
-  if (document.getElementById("all-notes-bg")) return;
+  if (OTHER_MODAL_IDS.some(id => document.getElementById(id))) return;
   if (!selectedDoorId || !data.doors[selectedDoorId]) { if (!noteDraftIds) root.innerHTML = ""; return; }
+  if (isEditingWithin("detail-root")) return; // no pisar el contenido mientras esta escribiendo/tocando adentro
   const d = data.doors[selectedDoorId];
   const pr = d.pendingRequest;
   const delayed = pr && (now()-pr.requestedAt>DELAY_MS);
   const doorHist = data.history.filter(h=>h.doorId===d.id).sort((a,b)=>b.executedAt-a.executedAt).slice(0,5);
   const doorNotes = (data.notes||[]).filter(n => n.doorIds && n.doorIds.includes(d.id));
-  const catedras = catedrasForToday();
+  const catedras = catedrasForToday(d.id);
   const totalCatedras = (data.catedras||[]).length;
 
   root.innerHTML = `<div class="sheet" id="sheet-bg"><div class="sheet-inner">
@@ -1458,7 +1670,20 @@ function renderDoorDetail() {
       <button id="sheet-close" style="font-size:20px;">✕</button>
     </div>
     <p style="margin:0 0 4px;font-weight:600;">Estado actual: ${d.status==="open"?"Abierta 🟢":"Cerrada 🔴"}</p>
-    <p style="font-size:13px;color:var(--ink-soft);margin:0 0 16px;">🔑 ${d.keyHolder?`Llave en poder de ${esc(d.keyHolder)}`:"Llave sin registrar"} · ${esc(d.sectorLabel)}</p>
+    <p style="font-size:13px;color:var(--ink-soft);margin:0 0 16px;">🔑 ${(d.keyHolders&&d.keyHolders.length)?`Llave en poder de ${d.keyHolders.map(esc).join(", ")}`:"Sin nadie asignado a la llave"} · ${esc(d.sectorLabel)}</p>
+    ${(() => {
+      const catedrasDeEstaAula = (data.catedras||[]).filter(c => catedraAulas(c).includes(d.id));
+      if (!catedrasDeEstaAula.length) return "";
+      return `<div class="card" style="margin-bottom:16px;background:var(--brass-soft);">
+        <p class="mono" style="font-size:10px;color:var(--ink-soft);margin:0 0 6px;">CÁTEDRAS QUE USAN ESTA AULA</p>
+        ${catedrasDeEstaAula.map(c => {
+          const turnoIcons = catedraTurnos(c).map(t=>({manana:"☀️",tarde:"🌤️",noche:"🌙"}[t])).join("");
+          const dias = catedraDias(c);
+          const diasTxt = dias.length ? dias.map(dd=>["D","L","M","X","J","V","S"][dd]).join("") : "todos los días";
+          return `<p style="font-size:12px;margin:0 0 4px;">${esc(catedraLabel(c))} ${turnoIcons} <span style="color:var(--ink-soft);">(${diasTxt})</span></p>`;
+        }).join("")}
+      </div>`;
+    })()}
     ${d.hasTV ? `<div class="card" style="margin-bottom:16px;background:#F1ECDD;"><p style="font-size:12px;margin:0;">📺 Tiene TV — extremar el cuidado al cerrar.</p></div>` : ""}
     ${d.status==="closed" && d.clean ? `<div class="card" style="margin-bottom:16px;background:var(--green-soft);"><p style="font-size:12px;margin:0;">✅ Quedó cerrada y limpia — limpieza no necesita revisarla.</p></div>` : ""}
     ${pr ? `<div class="card" style="margin-bottom:16px;background:${pr.type==="open"?"var(--green-soft)":"var(--red-soft)"};">
@@ -1467,21 +1692,32 @@ function renderDoorDetail() {
       </div>` : ""}
     ${user.role==="jefe" ? `
       <p class="mono" style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">PEDIR AL PERSONAL DEL PISO</p>
-      <p style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">Cátedra (opcional)</p>
-      ${catedras.length ? `<div id="det-catedras" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">${catedras.map(c=>`<button class="chip det-cat" data-cat="${esc(catedraLabel(c))}">${esc(catedraLabel(c))}${catedraAula(c)?` (aula ${esc(aulaLabel(catedraAula(c)))})`:""}</button>`).join("")}</div>` : ""}
-      ${totalCatedras > catedras.length ? `<p style="font-size:10px;color:var(--ink-soft);margin:0 0 6px;">Hay ${totalCatedras - catedras.length} cátedra(s) más cargadas para otro turno/día — si es una de esas, escribila de nuevo abajo.</p>` : ""}
-      <div style="display:flex;gap:6px;margin-bottom:4px;">
-        <input id="new-cat-inline" placeholder="¿No está en la lista? Escribila acá" style="flex:1;border:1px solid #D8CFB8;border-radius:6px;padding:7px 10px;font-size:12px;" />
-        <button id="new-cat-inline-btn" style="background:var(--ink);color:#F7F4EC;padding:0 12px;border-radius:6px;font-size:12px;font-weight:600;">+</button>
+      <p id="cat-selected-label" style="font-size:11px;color:var(--brass);font-weight:600;margin:0 0 8px;"></p>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <button id="det-req-open" ${pr?.type==="open"?"disabled":""} style="flex:1;padding:10px;border-radius:6px;background:var(--green-soft);font-size:13px;font-weight:600;opacity:${pr?.type==="open"?0.5:1};">🚪 Pedir apertura</button>
+        <button id="det-req-closed" ${pr?.type==="closed"?"disabled":""} style="flex:1;padding:10px;border-radius:6px;background:var(--red-soft);font-size:13px;font-weight:600;opacity:${pr?.type==="closed"?0.5:1};">🚪 Pedir cierre</button>
       </div>
-      ${!hasPermission(user,"gestionCatedras") ? `<p style="font-size:10px;color:var(--ink-soft);margin:2px 0 6px;">Esta cátedra queda guardada solo en este pedido, no se suma al catálogo general.</p>` : ""}
-      <p id="cat-selected-label" style="font-size:11px;color:var(--brass);font-weight:600;margin:4px 0 8px;"></p>
-      <div style="display:flex;gap:8px;margin-bottom:16px;">
-        <button id="det-req-open" ${pr?.type==="open"?"disabled":""} style="flex:1;padding:8px;border-radius:6px;background:var(--green-soft);font-size:13px;font-weight:600;opacity:${pr?.type==="open"?0.5:1};">🚪 Pedir apertura</button>
-        <button id="det-req-closed" ${pr?.type==="closed"?"disabled":""} style="flex:1;padding:8px;border-radius:6px;background:var(--red-soft);font-size:13px;font-weight:600;opacity:${pr?.type==="closed"?0.5:1};">🚪 Pedir cierre</button>
-      </div>` : ""}
+      <details id="det-cat-details" style="margin-bottom:16px;" ${catedraDetailsOpen?"open":""}>
+        <summary style="font-size:11px;color:var(--ink-soft);cursor:pointer;">¿De qué cátedra es? (opcional, tocá para elegir)</summary>
+        <div style="margin-top:10px;">
+          ${catedras.length ? `<div id="det-catedras" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">${catedras.map(c=>{ const aulas = catedraAulas(c); return `<button class="chip det-cat" data-cat="${esc(catedraLabel(c))}">${esc(catedraLabel(c))}${aulas.length?` (${aulas.map(a=>esc(aulaLabel(a))).join(", ")})`:""}</button>`; }).join("")}</div>` : ""}
+          ${totalCatedras > catedras.length ? `<p style="font-size:10px;color:var(--ink-soft);margin:0 0 6px;">Hay ${totalCatedras - catedras.length} cátedra(s) más cargadas para otro turno/día — si es una de esas, escribila de nuevo abajo.</p>` : ""}
+          <div style="position:relative;display:flex;gap:6px;margin-bottom:4px;">
+            <div style="flex:1;position:relative;">
+              <input id="new-cat-inline" placeholder="¿No está en la lista? Escribila acá" autocomplete="off" style="width:100%;border:1px solid #D8CFB8;border-radius:6px;padding:7px 10px;font-size:12px;" />
+              <div id="new-cat-inline-sug" class="hidden" style="position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #D8CFB8;border-radius:6px;max-height:150px;overflow-y:auto;z-index:5;margin-top:2px;"></div>
+            </div>
+            <button id="new-cat-inline-btn" style="background:var(--ink);color:#F7F4EC;padding:0 12px;border-radius:6px;font-size:12px;font-weight:600;">+</button>
+          </div>
+          ${!hasPermission(user,"gestionCatedras") ? `<p style="font-size:10px;color:var(--ink-soft);margin:2px 0 0;">Esta cátedra queda guardada solo en este pedido, no se suma al catálogo general.</p>` : ""}
+        </div>
+      </details>` : ""}
     <p class="mono" style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">YA LO HICE CON LA LLAVE — MARCAR</p>
     <p style="font-size:11px;color:var(--ink-soft);margin-bottom:8px;">Usalo también si te lo pidieron por handy, sin pasar por una solicitud del sistema.</p>
+    <p style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">¿Quién tiene la llave? (opcional, podés elegir más de uno)</p>
+    <div id="det-keyholders" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+      ${pisosStaffForSector(d.sector).length ? pisosStaffForSector(d.sector).map(n=>`<button type="button" class="chip det-kh" data-name="${esc(n)}">${esc(n)}</button>`).join("") : `<span style="font-size:11px;color:var(--ink-soft);">No hay nadie de Pisos asignado a este sector.</span>`}
+    </div>
     <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px;color:var(--ink-soft);">
       <input type="checkbox" id="det-clean" /> Quedó cerrada y limpia (limpieza no la necesita revisar)
     </label>
@@ -1507,8 +1743,21 @@ function renderDoorDetail() {
   const close = () => { selectedDoorId = null; selectedCatedra = null; markCleanChecked = false; render(); };
   document.getElementById("sheet-close").onclick = close;
   document.getElementById("sheet-bg").onclick = (e) => { if (e.target.id==="sheet-bg") close(); };
-  document.getElementById("det-mark-open").onclick = () => { if (confirmIfMismatch([d], "open")) markDoor(d.id, "open"); };
-  document.getElementById("det-mark-closed").onclick = () => { if (confirmIfMismatch([d], "closed")) markDoor(d.id, "closed", document.getElementById("det-clean").checked); };
+  const catDetailsEl = document.getElementById("det-cat-details");
+  if (catDetailsEl) catDetailsEl.addEventListener("toggle", () => { catedraDetailsOpen = catDetailsEl.open; });
+  // preseleccionado: si quien marca es de Pisos y está en la lista de este sector, arranca tildado a sí mismo.
+  let detKeyHolders = (user.role === "recorrido" && pisosStaffForSector(d.sector).includes(user.name)) ? [user.name] : [];
+  root.querySelectorAll(".det-kh").forEach(b => {
+    if (detKeyHolders.includes(b.dataset.name)) b.classList.add("active");
+    b.onclick = () => {
+      const n = b.dataset.name;
+      detKeyHolders = detKeyHolders.includes(n) ? detKeyHolders.filter(x=>x!==n) : [...detKeyHolders, n];
+      b.classList.toggle("active", detKeyHolders.includes(n));
+    };
+  });
+  const markOpenBtn = document.getElementById("det-mark-open"), markClosedBtn = document.getElementById("det-mark-closed");
+  if (markOpenBtn) markOpenBtn.onclick = () => { if (confirmIfMismatch([d], "open")) markDoor(d.id, "open", false, detKeyHolders); };
+  if (markClosedBtn) markClosedBtn.onclick = () => { if (confirmIfMismatch([d], "closed")) markDoor(d.id, "closed", document.getElementById("det-clean").checked); };
   const ro = document.getElementById("det-req-open"), rc = document.getElementById("det-req-closed");
   if (ro) ro.onclick = () => { if (confirmIfAlreadyInState([d], "open")) requestChange(d.id, "open", selectedCatedra); };
   if (rc) rc.onclick = () => { if (confirmIfAlreadyInState([d], "closed")) requestChange(d.id, "closed", selectedCatedra); };
@@ -1518,6 +1767,7 @@ function renderDoorDetail() {
     document.getElementById("cat-selected-label").textContent = selectedCatedra ? `Seleccionada: ${selectedCatedra}` : "";
   });
   const newCatI = document.getElementById("new-cat-inline"), newCatBtn = document.getElementById("new-cat-inline-btn");
+  if (newCatI) bindCatedraNameSuggest("new-cat-inline", "new-cat-inline-sug");
   if (newCatBtn) newCatBtn.onclick = () => {
     const v = newCatI.value.trim(); if (!v) return;
     if (hasPermission(user, "gestionCatedras")) {

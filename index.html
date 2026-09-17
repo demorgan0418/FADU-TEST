@@ -102,7 +102,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const STATE_DOC = doc(db, "app", "estado");
 /* Pegá acá tu clave VAPID (Firebase Console > Configuración del proyecto > Cloud Messaging > Configuración web > Generar par de claves) */
-const VAPID_KEY = "BBZ0n-AuXpY4i7n5555ZxKF3QNhCqNeDioZhfw_oTSSw1nYwWPye54U2OTblOhmF3nxIgoH9qjxONYt8EkpfTFqhF4I";
+const VAPID_KEY = "BBZ0n-AuXpY4555i7nZxKF3QNhCqNeDioZhfw_oTSSw1nYwWPye54U2OTblOhmF3nxIgoH9qjxONYt8EkpfTFqhF4I";
 
 const ZONES = [
   { id: "SS", label: "Subsuelo" },
@@ -112,7 +112,7 @@ const ZONES = [
 ];
 const DELAY_MS = 15 * 60 * 1000;
 
-const APP_VERSION = "1.16.2";
+const APP_VERSION = "1.16.3";
 const VERSION_HISTORY = [
   { version: "1.6.0", changes: [
     "Arreglado un error que dejaba de guardar cambios después de contradecir una solicitud (afectaba solo a esas aulas puntuales).",
@@ -196,23 +196,16 @@ const VERSION_HISTORY = [
   { version: "1.15.5", changes: [
     "Arreglado: el cambio anterior se pasaba de la raya y borraba lo escrito al pasar de un campo a otro dentro del mismo formulario (por ejemplo, al elegir un aula o un turno) — ya quedó corregido, ahora solo protege contra cambios de otras personas.",
   ]},
-  { version: "1.16.0", changes: [
-    "Arreglado de raíz: \"llave en poder de\" mostraba nombres sin relación real con esa puerta. Ahora se elige explícitamente quién tiene la llave al marcar (una o varias personas), y si no hay nadie dice \"Sin nadie asignado a la llave\".",
+  { version: "1.16.3", changes: [
+    "Arreglado de raíz: \"llave en poder de\" mostraba nombres sin relación real con esa puerta. Ahora los jefes eligen quién tiene la llave con un desplegable (filtrado al personal de Pisos de su mismo turno) al marcar una puerta — Pisos no ve este selector, se asigna solo. Si no hay nadie, dice \"Sin nadie asignado a la llave\".",
+    "Elegir a alguien en ese desplegable que todavía no tenía ese piso asignado se lo asigna en el momento (asignación express), sin tener que ir a Personal.",
     "Los jefes ahora pueden marcar puertas directamente (individual y en bloque), además de pedir apertura/cierre — para cubrir los casos que llegan por handy.",
-    "Al abrir el detalle de una puerta, si tiene cátedras asociadas se ven de un vistazo arriba de todo.",
-    "El desplegable de cátedra recuerda si lo dejaste abierto o cerrado, y aplica lo mismo a la próxima puerta que toques.",
+    "Al abrir el detalle de una puerta, si tiene cátedras asociadas se ven de un vistazo arriba de todo, como chips, filtradas por turno y día — y se pueden tocar para elegirlas directo al pedir apertura/cierre.",
+    "El desplegable de cátedra (para las que no aparecen de un vistazo) recuerda si lo dejaste abierto o cerrado, y aplica lo mismo a la próxima puerta que toques.",
     "Nuevo buscador en Personal → Cátedras para encontrarlas más rápido.",
     "Nuevo botón para que el personal de Pisos abandone su turno (se desasigna sus propios pisos).",
     "Nuevo botón para que los jefes desasignen a todo el personal de Pisos de una sola vez.",
     "Al cerrar sesión un jefe, si hay gente de Pisos con pisos asignados, se le pregunta si quiere desasignarlos antes de salir.",
-  ]},
-  { version: "1.16.1", changes: [
-    "El selector de \"quién tiene la llave\" pasó de chips a un desplegable, filtrado al personal de Pisos del turno de quien está marcando — y ahora solo lo ven los jefes, no el personal de Pisos.",
-    "Las cátedras que se ven de un vistazo en el detalle de una puerta ahora se filtran también por turno y día de quien está mirando, igual que en el picker.",
-  ]},
-  { version: "1.16.2", changes: [
-    "El desplegable de \"quién tiene la llave\" ahora es una asignación express: elegir a alguien de tu turno que todavía no tenía ese piso se lo asigna en el momento, sin tener que ir a Personal.",
-    "Las cátedras que se ven de un vistazo en el detalle de una puerta ahora se muestran como chips, más compacto.",
   ]},
 ];
 // se mantiene por compatibilidad con el resto del código, siempre apunta a la version mas nueva
@@ -1733,13 +1726,15 @@ function renderDoorDetail() {
       const catedrasDeEstaAula = catedrasForToday(d.id);
       if (!catedrasDeEstaAula.length) return "";
       return `<div class="card" style="margin-bottom:16px;background:var(--brass-soft);">
-        <p class="mono" style="font-size:10px;color:var(--ink-soft);margin:0 0 6px;">CÁTEDRAS QUE USAN ESTA AULA</p>
+        <p class="mono" style="font-size:10px;color:var(--ink-soft);margin:0 0 6px;">CÁTEDRAS QUE USAN ESTA AULA${(user.role==="jefe"||isSuperuser(user))?" (tocá para elegirla al pedir)":""}</p>
         <div style="display:flex;flex-wrap:wrap;gap:6px;">
           ${catedrasDeEstaAula.map(c => {
             const turnoIcons = catedraTurnos(c).map(t=>({manana:"☀️",tarde:"🌤️",noche:"🌙"}[t])).join("");
             const dias = catedraDias(c);
             const diasTxt = dias.length ? dias.map(dd=>["D","L","M","X","J","V","S"][dd]).join("") : "todos";
-            return `<span class="chip" style="background:#fff;">${esc(catedraLabel(c))} ${turnoIcons} <span style="color:var(--ink-soft);">(${diasTxt})</span></span>`;
+            const label = esc(catedraLabel(c));
+            if (user.role==="jefe"||isSuperuser(user)) return `<button type="button" class="chip det-cat" data-cat="${label}" style="background:#fff;">${label} ${turnoIcons} <span style="color:var(--ink-soft);">(${diasTxt})</span></button>`;
+            return `<span class="chip" style="background:#fff;">${label} ${turnoIcons} <span style="color:var(--ink-soft);">(${diasTxt})</span></span>`;
           }).join("")}
         </div>
       </div>`;

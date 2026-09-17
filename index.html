@@ -102,7 +102,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const STATE_DOC = doc(db, "app", "estado");
 /* Pegá acá tu clave VAPID (Firebase Console > Configuración del proyecto > Cloud Messaging > Configuración web > Generar par de claves) */
-const VAPID_KEY = "BBZ0n-AuXpY4i7n55553QNhCqNeDioZhfw_oTSSw1nYwWPye54U2OTblOhmF3nxIgoH9qjxONYt8EkpfTFqhF4I";
+const VAPID_KEY = "BBZ0n-AuX5555i7nZxKF3QNhCqNeDioZhfw_oTSSw1nYwWPye54U2OTblOhmF3nxIgoH9qjxONYt8EkpfTFqhF4I";
 
 const ZONES = [
   { id: "SS", label: "Subsuelo" },
@@ -112,7 +112,7 @@ const ZONES = [
 ];
 const DELAY_MS = 15 * 60 * 1000;
 
-const APP_VERSION = "1.16.0";
+const APP_VERSION = "1.16.1";
 const VERSION_HISTORY = [
   { version: "1.6.0", changes: [
     "Arreglado un error que dejaba de guardar cambios después de contradecir una solicitud (afectaba solo a esas aulas puntuales).",
@@ -205,6 +205,10 @@ const VERSION_HISTORY = [
     "Nuevo botón para que el personal de Pisos abandone su turno (se desasigna sus propios pisos).",
     "Nuevo botón para que los jefes desasignen a todo el personal de Pisos de una sola vez.",
     "Al cerrar sesión un jefe, si hay gente de Pisos con pisos asignados, se le pregunta si quiere desasignarlos antes de salir.",
+  ]},
+  { version: "1.16.1", changes: [
+    "El selector de \"quién tiene la llave\" pasó de chips a un desplegable, filtrado al personal de Pisos del turno de quien está marcando — y ahora solo lo ven los jefes, no el personal de Pisos.",
+    "Las cátedras que se ven de un vistazo en el detalle de una puerta ahora se filtran también por turno y día de quien está mirando, igual que en el picker.",
   ]},
 ];
 // se mantiene por compatibilidad con el resto del código, siempre apunta a la version mas nueva
@@ -876,6 +880,35 @@ function isSuperuser(u) { return !!(u && u.name && u.name.toLowerCase() === SUPE
 function pisosStaffForSector(sectorId) {
   return Object.keys(data.staff).filter(n => data.staff[n].role === "recorrido" && (data.staff[n].zones||[]).includes(sectorId));
 }
+// desplegable para elegir quien(es) tienen la llave — solo lo usan los jefes. Se filtra al personal
+// de Pisos de ese sector que además comparte turno con el jefe logueado (si el jefe no tiene turno
+// cargado, o la persona tampoco, se muestra igual, para no ocultar a nadie por error).
+function keyHolderPickerHTML(id) { return `<div id="${id}"></div>`; }
+function bindKeyHolderPicker(id, sectorIds, initialSelected) {
+  const sectors = Array.isArray(sectorIds) ? sectorIds : [sectorIds];
+  const myTurnos = (user && user.turnos) || [];
+  const options = [...new Set(sectors.flatMap(pisosStaffForSector))].filter(n => {
+    const t = staffTurnos(data.staff[n]);
+    return !t.length || !myTurnos.length || t.some(x => myTurnos.includes(x));
+  });
+  let selected = [...(initialSelected||[])];
+  const container = document.getElementById(id);
+  const render = () => {
+    container.innerHTML = `
+      ${selected.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+        ${selected.map(n => `<span class="chip active" style="display:inline-flex;align-items:center;gap:5px;">${esc(n)} <button type="button" data-remove-kh="${esc(n)}" style="font-size:13px;line-height:1;">×</button></span>`).join("")}
+      </div>` : ""}
+      <select id="${id}-select" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;">
+        <option value="">${options.filter(n=>!selected.includes(n)).length ? "+ Agregar persona..." : (options.length?"Ya elegiste a todos los de tu turno":"No hay nadie de Pisos de tu turno en este sector")}</option>
+        ${options.filter(n => !selected.includes(n)).map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}
+      </select>`;
+    container.querySelectorAll("[data-remove-kh]").forEach(b => b.onclick = () => { selected = selected.filter(x=>x!==b.dataset.removeKh); render(); });
+    const sel = document.getElementById(`${id}-select`);
+    sel.onchange = () => { if (sel.value) { selected = [...selected, sel.value]; render(); } };
+  };
+  render();
+  return { getSelected: () => selected };
+}
 function hasPermission(u, cap) {
   if (!u) return false;
   if (isSuperuser(u)) return true; // el superusuario puede todo, sin necesidad de otorgarselo
@@ -1430,14 +1463,19 @@ function renderSelectionBar(pendingList) {
   div.id = "selection-bar-root";
   div.className = "fixed";
   div.style.cssText = "position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;";
-  // union de personal de Pisos de todos los sectores de lo seleccionado, para elegir quien tiene la llave
+  // union de sectores de todo lo seleccionado, para filtrar el desplegable de "quien tiene la llave"
   const sectorsInSel = [...new Set(selectedIds.map(id => data.doors[id]?.sector).filter(Boolean))];
-  const selStaffOptions = [...new Set(sectorsInSel.flatMap(pisosStaffForSector))];
-  const markSection = `
-      <p style="font-size:11px;color:var(--ink-soft);margin:4px 0;">¿Quién tiene la llave? (opcional, podés elegir más de uno)</p>
-      <div id="sel-keyholders" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
-        ${selStaffOptions.length ? selStaffOptions.map(n=>`<button type="button" class="chip sel-kh" data-name="${esc(n)}">${esc(n)}</button>`).join("") : `<span style="font-size:11px;color:var(--ink-soft);">No hay nadie de Pisos asignado a estos sectores.</span>`}
-      </div>
+  const markSectionJefe = `
+      <p style="font-size:11px;color:var(--ink-soft);margin:4px 0;">¿Quién tiene la llave? (opcional)</p>
+      ${keyHolderPickerHTML("sel-keyholders")}
+      <label style="display:flex;align-items:center;gap:8px;margin:8px 0;font-size:12px;color:var(--ink-soft);">
+        <input type="checkbox" id="sel-clean" /> Quedaron cerradas y limpias (limpieza no las necesita revisar)
+      </label>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <button id="sel-mark-open" style="flex:1;padding:8px;border-radius:6px;background:var(--green);color:#fff;font-size:12px;font-weight:700;">Marcar abiertas</button>
+        <button id="sel-mark-closed" style="flex:1;padding:8px;border-radius:6px;background:var(--red);color:#fff;font-size:12px;font-weight:700;">Marcar cerradas</button>
+      </div>`;
+  const markSectionPisos = `
       <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px;color:var(--ink-soft);">
         <input type="checkbox" id="sel-clean" /> Quedaron cerradas y limpias (limpieza no las necesita revisar)
       </label>
@@ -1456,23 +1494,21 @@ function renderSelectionBar(pendingList) {
       </div>
       <details style="margin-bottom:8px;">
         <summary style="font-size:11px;color:var(--ink-soft);cursor:pointer;">¿Ya lo hicieron por handy? Marcar directamente</summary>
-        <div style="margin-top:8px;">${markSection}</div>
-      </details>` : markSection}
+        <div style="margin-top:8px;">${markSectionJefe}</div>
+      </details>` : markSectionPisos}
       <button id="sel-add-note" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--brass);font-size:12px;font-weight:600;">📝 Agregar nota para estas aulas</button>
     </div>`;
   document.body.appendChild(div);
   document.getElementById("sel-cancel").onclick = clearSelection;
-  let selKeyHolders = (user.role === "recorrido" && selStaffOptions.includes(user.name)) ? [user.name] : [];
-  div.querySelectorAll(".sel-kh").forEach(b => {
-    if (selKeyHolders.includes(b.dataset.name)) b.classList.add("active");
-    b.onclick = () => {
-      const n = b.dataset.name;
-      selKeyHolders = selKeyHolders.includes(n) ? selKeyHolders.filter(x=>x!==n) : [...selKeyHolders, n];
-      b.classList.toggle("active", selKeyHolders.includes(n));
-    };
-  });
+  // jefes: eligen quien tiene la llave con el desplegable. Pisos: no ven nada de esto, se asignan solos.
+  const selKhWidget = document.getElementById("sel-keyholders") ? bindKeyHolderPicker("sel-keyholders", sectorsInSel, []) : null;
   const markOpenSelBtn = document.getElementById("sel-mark-open"), markClosedSelBtn = document.getElementById("sel-mark-closed");
-  if (markOpenSelBtn) markOpenSelBtn.onclick = () => { const doorsArr = selectedIds.map(id=>data.doors[id]); if (confirmIfMismatch(doorsArr, "open")) bulkMark("open", false, selKeyHolders); };
+  if (markOpenSelBtn) markOpenSelBtn.onclick = () => {
+    const doorsArr = selectedIds.map(id=>data.doors[id]);
+    if (!confirmIfMismatch(doorsArr, "open")) return;
+    const holders = selKhWidget ? selKhWidget.getSelected() : (user.role === "recorrido" ? [user.name] : []);
+    bulkMark("open", false, holders);
+  };
   if (markClosedSelBtn) markClosedSelBtn.onclick = () => { const doorsArr = selectedIds.map(id=>data.doors[id]); if (confirmIfMismatch(doorsArr, "closed")) bulkMark("closed", document.getElementById("sel-clean").checked); };
   const ro = document.getElementById("sel-req-open"), rc = document.getElementById("sel-req-closed");
   if (ro) ro.onclick = () => { const doorsArr = selectedIds.map(id=>data.doors[id]); if (confirmIfAlreadyInState(doorsArr, "open")) bulkRequest("open"); };
@@ -1672,7 +1708,7 @@ function renderDoorDetail() {
     <p style="margin:0 0 4px;font-weight:600;">Estado actual: ${d.status==="open"?"Abierta 🟢":"Cerrada 🔴"}</p>
     <p style="font-size:13px;color:var(--ink-soft);margin:0 0 16px;">🔑 ${(d.keyHolders&&d.keyHolders.length)?`Llave en poder de ${d.keyHolders.map(esc).join(", ")}`:"Sin nadie asignado a la llave"} · ${esc(d.sectorLabel)}</p>
     ${(() => {
-      const catedrasDeEstaAula = (data.catedras||[]).filter(c => catedraAulas(c).includes(d.id));
+      const catedrasDeEstaAula = catedrasForToday(d.id);
       if (!catedrasDeEstaAula.length) return "";
       return `<div class="card" style="margin-bottom:16px;background:var(--brass-soft);">
         <p class="mono" style="font-size:10px;color:var(--ink-soft);margin:0 0 6px;">CÁTEDRAS QUE USAN ESTA AULA</p>
@@ -1714,11 +1750,10 @@ function renderDoorDetail() {
       </details>` : ""}
     <p class="mono" style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">YA LO HICE CON LA LLAVE — MARCAR</p>
     <p style="font-size:11px;color:var(--ink-soft);margin-bottom:8px;">Usalo también si te lo pidieron por handy, sin pasar por una solicitud del sistema.</p>
-    <p style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">¿Quién tiene la llave? (opcional, podés elegir más de uno)</p>
-    <div id="det-keyholders" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
-      ${pisosStaffForSector(d.sector).length ? pisosStaffForSector(d.sector).map(n=>`<button type="button" class="chip det-kh" data-name="${esc(n)}">${esc(n)}</button>`).join("") : `<span style="font-size:11px;color:var(--ink-soft);">No hay nadie de Pisos asignado a este sector.</span>`}
-    </div>
-    <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px;color:var(--ink-soft);">
+    ${(user.role==="jefe"||isSuperuser(user)) ? `
+    <p style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">¿Quién tiene la llave? (opcional)</p>
+    ${keyHolderPickerHTML("det-keyholders")}` : ""}
+    <label style="display:flex;align-items:center;gap:8px;margin:8px 0;font-size:12px;color:var(--ink-soft);">
       <input type="checkbox" id="det-clean" /> Quedó cerrada y limpia (limpieza no la necesita revisar)
     </label>
     <div style="display:flex;gap:8px;margin-bottom:16px;">
@@ -1745,18 +1780,14 @@ function renderDoorDetail() {
   document.getElementById("sheet-bg").onclick = (e) => { if (e.target.id==="sheet-bg") close(); };
   const catDetailsEl = document.getElementById("det-cat-details");
   if (catDetailsEl) catDetailsEl.addEventListener("toggle", () => { catedraDetailsOpen = catDetailsEl.open; });
-  // preseleccionado: si quien marca es de Pisos y está en la lista de este sector, arranca tildado a sí mismo.
-  let detKeyHolders = (user.role === "recorrido" && pisosStaffForSector(d.sector).includes(user.name)) ? [user.name] : [];
-  root.querySelectorAll(".det-kh").forEach(b => {
-    if (detKeyHolders.includes(b.dataset.name)) b.classList.add("active");
-    b.onclick = () => {
-      const n = b.dataset.name;
-      detKeyHolders = detKeyHolders.includes(n) ? detKeyHolders.filter(x=>x!==n) : [...detKeyHolders, n];
-      b.classList.toggle("active", detKeyHolders.includes(n));
-    };
-  });
+  // jefes: eligen quien tiene la llave con el desplegable. Pisos: se asigna a si mismo automaticamente, sin verlo.
+  const detKhWidget = document.getElementById("det-keyholders") ? bindKeyHolderPicker("det-keyholders", d.sector, []) : null;
   const markOpenBtn = document.getElementById("det-mark-open"), markClosedBtn = document.getElementById("det-mark-closed");
-  if (markOpenBtn) markOpenBtn.onclick = () => { if (confirmIfMismatch([d], "open")) markDoor(d.id, "open", false, detKeyHolders); };
+  if (markOpenBtn) markOpenBtn.onclick = () => {
+    if (!confirmIfMismatch([d], "open")) return;
+    const holders = detKhWidget ? detKhWidget.getSelected() : (user.role === "recorrido" ? [user.name] : []);
+    markDoor(d.id, "open", false, holders);
+  };
   if (markClosedBtn) markClosedBtn.onclick = () => { if (confirmIfMismatch([d], "closed")) markDoor(d.id, "closed", document.getElementById("det-clean").checked); };
   const ro = document.getElementById("det-req-open"), rc = document.getElementById("det-req-closed");
   if (ro) ro.onclick = () => { if (confirmIfAlreadyInState([d], "open")) requestChange(d.id, "open", selectedCatedra); };

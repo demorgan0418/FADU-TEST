@@ -102,7 +102,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const STATE_DOC = doc(db, "app", "estado");
 /* Pegá acá tu clave VAPID (Firebase Console > Configuración del proyecto > Cloud Messaging > Configuración web > Generar par de claves) */
-const VAPID_KEY = "BBZ0n-AuX5555i7nZxKF3QNhCqNeDioZhfw_oTSSw1nYwWPye54U2OTblOhmF3nxIgoH9qjxONYt8EkpfTFqhF4I";
+const VAPID_KEY = "BBZ0n-AuXpY4i7n5555ZxKF3QNhCqNeDioZhfw_oTSSw1nYwWPye54U2OTblOhmF3nxIgoH9qjxONYt8EkpfTFqhF4I";
 
 const ZONES = [
   { id: "SS", label: "Subsuelo" },
@@ -112,7 +112,7 @@ const ZONES = [
 ];
 const DELAY_MS = 15 * 60 * 1000;
 
-const APP_VERSION = "1.16.1";
+const APP_VERSION = "1.16.2";
 const VERSION_HISTORY = [
   { version: "1.6.0", changes: [
     "Arreglado un error que dejaba de guardar cambios después de contradecir una solicitud (afectaba solo a esas aulas puntuales).",
@@ -209,6 +209,10 @@ const VERSION_HISTORY = [
   { version: "1.16.1", changes: [
     "El selector de \"quién tiene la llave\" pasó de chips a un desplegable, filtrado al personal de Pisos del turno de quien está marcando — y ahora solo lo ven los jefes, no el personal de Pisos.",
     "Las cátedras que se ven de un vistazo en el detalle de una puerta ahora se filtran también por turno y día de quien está mirando, igual que en el picker.",
+  ]},
+  { version: "1.16.2", changes: [
+    "El desplegable de \"quién tiene la llave\" ahora es una asignación express: elegir a alguien de tu turno que todavía no tenía ese piso se lo asigna en el momento, sin tener que ir a Personal.",
+    "Las cátedras que se ven de un vistazo en el detalle de una puerta ahora se muestran como chips, más compacto.",
   ]},
 ];
 // se mantiene por compatibilidad con el resto del código, siempre apunta a la version mas nueva
@@ -725,7 +729,17 @@ function markDoor(doorId, status, clean, keyHolders) {
   update(prev => {
     const d = prev.doors[doorId]; const pr = d.pendingRequest;
     const entry = { id:`${doorId}-${now()}`, doorId, doorLabel:d.label, action:status, requestedBy: pr?pr.requestedBy:null, requestedAt: pr?pr.requestedAt:null, catedra: (pr && pr.catedra) ? pr.catedra : null, executedBy:user.name, executedAt: now() };
+    // asignacion express: a quien se elija como tenedor de la llave, si no tenia este piso asignado, se lo asigna en el momento.
+    let staff = prev.staff;
+    if (status === "open" && keyHolders && keyHolders.length) {
+      staff = { ...staff };
+      keyHolders.forEach(name => {
+        const s = staff[name];
+        if (s && !(s.zones||[]).includes(d.sector)) staff[name] = { ...s, zones: [...(s.zones||[]), d.sector] };
+      });
+    }
     return { ...prev,
+      staff,
       doors: { ...prev.doors, [doorId]: { ...d, status, keyHolders: status==="open" ? (keyHolders || []) : [], pendingRequest:null, clean: status==="closed" ? !!clean : false } },
       history: [entry, ...prev.history].slice(0,300) };
   });
@@ -877,9 +891,6 @@ const CAPABILITIES = [
 ];
 function isSuperuser(u) { return !!(u && u.name && u.name.toLowerCase() === SUPERUSER_NAME); }
 // personal de "Pisos" (recorrido) asignado a un sector, para elegir quien tiene la llave al marcar
-function pisosStaffForSector(sectorId) {
-  return Object.keys(data.staff).filter(n => data.staff[n].role === "recorrido" && (data.staff[n].zones||[]).includes(sectorId));
-}
 // desplegable para elegir quien(es) tienen la llave — solo lo usan los jefes. Se filtra al personal
 // de Pisos de ese sector que además comparte turno con el jefe logueado (si el jefe no tiene turno
 // cargado, o la persona tampoco, se muestra igual, para no ocultar a nadie por error).
@@ -887,7 +898,10 @@ function keyHolderPickerHTML(id) { return `<div id="${id}"></div>`; }
 function bindKeyHolderPicker(id, sectorIds, initialSelected) {
   const sectors = Array.isArray(sectorIds) ? sectorIds : [sectorIds];
   const myTurnos = (user && user.turnos) || [];
-  const options = [...new Set(sectors.flatMap(pisosStaffForSector))].filter(n => {
+  // se muestra TODO el personal de Pisos del mismo turno, no solo el ya asignado a este sector —
+  // elegir a alguien acá lo asigna al piso en el momento (si no lo estaba ya), sin tener que ir a Personal.
+  const options = Object.keys(data.staff).filter(n => {
+    if (data.staff[n].role !== "recorrido") return false;
     const t = staffTurnos(data.staff[n]);
     return !t.length || !myTurnos.length || t.some(x => myTurnos.includes(x));
   });
@@ -899,8 +913,8 @@ function bindKeyHolderPicker(id, sectorIds, initialSelected) {
         ${selected.map(n => `<span class="chip active" style="display:inline-flex;align-items:center;gap:5px;">${esc(n)} <button type="button" data-remove-kh="${esc(n)}" style="font-size:13px;line-height:1;">×</button></span>`).join("")}
       </div>` : ""}
       <select id="${id}-select" style="width:100%;border:1px solid #D8CFB8;border-radius:8px;padding:9px 12px;font-size:13px;">
-        <option value="">${options.filter(n=>!selected.includes(n)).length ? "+ Agregar persona..." : (options.length?"Ya elegiste a todos los de tu turno":"No hay nadie de Pisos de tu turno en este sector")}</option>
-        ${options.filter(n => !selected.includes(n)).map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}
+        <option value="">${options.filter(n=>!selected.includes(n)).length ? "+ Elegir y asignar persona..." : (options.length?"Ya elegiste a todos los de tu turno":"No hay nadie de Pisos en tu turno")}</option>
+        ${options.filter(n => !selected.includes(n)).map(n => `<option value="${esc(n)}">${esc(n)}${(data.staff[n].zones||[]).includes(sectors[0])?"":" (se le asigna este piso)"}</option>`).join("")}
       </select>`;
     container.querySelectorAll("[data-remove-kh]").forEach(b => b.onclick = () => { selected = selected.filter(x=>x!==b.dataset.removeKh); render(); });
     const sel = document.getElementById(`${id}-select`);
@@ -1026,12 +1040,20 @@ function bulkMark(status, clean, keyHolders) {
   const finalHolders = keyHolders !== undefined ? keyHolders : ((status==="open" && user.role==="recorrido") ? [user.name] : []);
   update(prev => {
     const doors = {...prev.doors}; const entries = [];
+    let staff = prev.staff;
     selectedIds.forEach(id => {
       const d = doors[id]; const pr = d.pendingRequest;
       entries.push({ id:`${id}-${now()}-${Math.random().toString(36).slice(2,6)}`, doorId:id, doorLabel:d.label, action:status, requestedBy:pr?pr.requestedBy:null, requestedAt:pr?pr.requestedAt:null, catedra: (pr && pr.catedra) ? pr.catedra : null, executedBy:user.name, executedAt:now() });
       doors[id] = { ...d, status, keyHolders: status==="open" ? finalHolders : [], pendingRequest:null, clean: status==="closed" ? !!clean : false };
+      // asignacion express: a quien se elija como tenedor de la llave, si no tenia este piso asignado, se lo asigna en el momento.
+      if (status === "open" && finalHolders.length) {
+        finalHolders.forEach(name => {
+          const s = staff[name];
+          if (s && !(s.zones||[]).includes(d.sector)) { if (staff===prev.staff) staff = {...staff}; staff[name] = { ...s, zones: [...(s.zones||[]), d.sector] }; }
+        });
+      }
     });
-    return { ...prev, doors, history: [...entries, ...prev.history].slice(0,300) };
+    return { ...prev, staff, doors, history: [...entries, ...prev.history].slice(0,300) };
   });
   clearSelection();
 }
@@ -1712,12 +1734,14 @@ function renderDoorDetail() {
       if (!catedrasDeEstaAula.length) return "";
       return `<div class="card" style="margin-bottom:16px;background:var(--brass-soft);">
         <p class="mono" style="font-size:10px;color:var(--ink-soft);margin:0 0 6px;">CÁTEDRAS QUE USAN ESTA AULA</p>
-        ${catedrasDeEstaAula.map(c => {
-          const turnoIcons = catedraTurnos(c).map(t=>({manana:"☀️",tarde:"🌤️",noche:"🌙"}[t])).join("");
-          const dias = catedraDias(c);
-          const diasTxt = dias.length ? dias.map(dd=>["D","L","M","X","J","V","S"][dd]).join("") : "todos los días";
-          return `<p style="font-size:12px;margin:0 0 4px;">${esc(catedraLabel(c))} ${turnoIcons} <span style="color:var(--ink-soft);">(${diasTxt})</span></p>`;
-        }).join("")}
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${catedrasDeEstaAula.map(c => {
+            const turnoIcons = catedraTurnos(c).map(t=>({manana:"☀️",tarde:"🌤️",noche:"🌙"}[t])).join("");
+            const dias = catedraDias(c);
+            const diasTxt = dias.length ? dias.map(dd=>["D","L","M","X","J","V","S"][dd]).join("") : "todos";
+            return `<span class="chip" style="background:#fff;">${esc(catedraLabel(c))} ${turnoIcons} <span style="color:var(--ink-soft);">(${diasTxt})</span></span>`;
+          }).join("")}
+        </div>
       </div>`;
     })()}
     ${d.hasTV ? `<div class="card" style="margin-bottom:16px;background:#F1ECDD;"><p style="font-size:12px;margin:0;">📺 Tiene TV — extremar el cuidado al cerrar.</p></div>` : ""}
